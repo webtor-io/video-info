@@ -3,7 +3,7 @@ module github.com/webtor-io/video-info
 go 1.13
 
 require (
-	github.com/go-redis/redis v6.15.6+incompatible
+	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/go-redis/redis/v7 v7.0.0-beta.4 // indirect
 	github.com/jeffallen/seekinghttp v0.0.0-20171214161738-f41d11cb25b7
 	github.com/joonix/log v0.0.0-20190524090622-13fe31bbdd7a
@@ -12,5 +12,5 @@ require (
 	github.com/pkg/errors v0.8.1
 	github.com/sirupsen/logrus v1.4.2
 	github.com/urfave/cli v1.22.1
-	github.com/webtor-io/common-services v0.0.0-20200102124507-e840419c0302
+	github.com/webtor-io/common-services v0.0.0-20200315170226-d438614cbc09
 )

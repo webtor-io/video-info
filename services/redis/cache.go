@@ -10,22 +10,23 @@ import (
 
 	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
+	cs "github.com/webtor-io/common-services"
 )
 
 type Cache struct {
 	key string
-	cl  *Client
+	cl  *cs.RedisClient
 }
 
-func NewCache(key string, cl *Client) *Cache {
+func NewCache(key string, cl *cs.RedisClient) *Cache {
 	return &Cache{key: key, cl: cl}
 }
 
 func (s *Cache) GetHash() (uint64, error) {
-	cl, err := s.cl.Get()
-	if err != nil {
-		return 0, errors.Wrap(err, "Failed to get redis client")
-	}
+	cl := s.cl.Get()
+	// if err != nil {
+	// 	return 0, errors.Wrap(err, "Failed to get redis client")
+	// }
 	hash, err := cl.Get(s.key + "hash").Uint64()
 	if err == redis.Nil {
 		return 0, nil
@@ -37,11 +38,11 @@ func (s *Cache) GetHash() (uint64, error) {
 }
 
 func (s *Cache) SetHash(hash uint64) error {
-	cl, err := s.cl.Get()
-	if err != nil {
-		return errors.Wrap(err, "Failed to get redis client")
-	}
-	err = cl.Set(s.key+"hash", hash, time.Hour*24).Err()
+	cl := s.cl.Get()
+	// if err != nil {
+	// 	return errors.Wrap(err, "Failed to get redis client")
+	// }
+	err := cl.Set(s.key+"hash", hash, time.Hour*24).Err()
 	if err != nil {
 		return errors.Wrap(err, "Failed to set hash")
 	}
@@ -49,10 +50,10 @@ func (s *Cache) SetHash(hash uint64) error {
 }
 
 func (s *Cache) GetSubtitles() (osdb.Subtitles, error) {
-	cl, err := s.cl.Get()
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to get redis client")
-	}
+	cl := s.cl.Get()
+	// if err != nil {
+	// 	return nil, errors.Wrap(err, "Failed to get redis client")
+	// }
 	data, err := cl.Get(s.key + "subs").Bytes()
 	if err == redis.Nil {
 		return nil, nil
@@ -69,10 +70,10 @@ func (s *Cache) GetSubtitles() (osdb.Subtitles, error) {
 }
 
 func (s *Cache) SetSubtitles(subs osdb.Subtitles) error {
-	cl, err := s.cl.Get()
-	if err != nil {
-		return errors.Wrap(err, "Failed to get redis client")
-	}
+	cl := s.cl.Get()
+	// if err != nil {
+	// 	return errors.Wrap(err, "Failed to get redis client")
+	// }
 	data, err := s.encode(subs)
 	if err != nil {
 		return errors.Wrap(err, "Failed to encode subs")
@@ -85,10 +86,10 @@ func (s *Cache) SetSubtitles(subs osdb.Subtitles) error {
 }
 
 func (s *Cache) GetSubtitle(id int) ([]byte, error) {
-	cl, err := s.cl.Get()
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to get redis client")
-	}
+	cl := s.cl.Get()
+	// if err != nil {
+	// 	return nil, errors.Wrap(err, "Failed to get redis client")
+	// }
 	data, err := cl.Get(s.key + "sub" + fmt.Sprintf("%d", id)).Bytes()
 	if err == redis.Nil {
 		return nil, nil
@@ -100,11 +101,11 @@ func (s *Cache) GetSubtitle(id int) ([]byte, error) {
 }
 
 func (s *Cache) SetSubtitle(id int, data []byte) error {
-	cl, err := s.cl.Get()
-	if err != nil {
-		return errors.Wrap(err, "Failed to get redis client")
-	}
-	err = cl.Set(s.key+"sub"+fmt.Sprintf("%d", id), data, time.Hour*24).Err()
+	cl := s.cl.Get()
+	// if err != nil {
+	// 	return errors.Wrap(err, "Failed to get redis client")
+	// }
+	err := cl.Set(s.key+"sub"+fmt.Sprintf("%d", id), data, time.Hour*24).Err()
 	if err != nil {
 		return errors.Wrap(err, "Failed to set hash")
 	}

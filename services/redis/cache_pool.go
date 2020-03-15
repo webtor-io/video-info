@@ -2,14 +2,16 @@ package redis
 
 import (
 	"sync"
+
+	cs "github.com/webtor-io/common-services"
 )
 
 type CachePool struct {
 	sm sync.Map
-	cl *Client
+	cl *cs.RedisClient
 }
 
-func NewCachePool(cl *Client) *CachePool {
+func NewCachePool(cl *cs.RedisClient) *CachePool {
 	return &CachePool{cl: cl}
 }
 

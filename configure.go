@@ -13,14 +13,14 @@ func configure(app *cli.App) {
 	app.Flags = []cli.Flag{}
 	cs.RegisterProbeFlags(app)
 	s.RegisterWebFlags(app)
-	redis.RegisterRedisFlags(app)
+	cs.RegisterRedisClientFlags(app)
 
 	app.Action = run
 }
 
 func run(c *cli.Context) error {
 	// Setting redisClient
-	redisClient := redis.NewClient(c)
+	redisClient := cs.NewRedisClient(c)
 
 	// Setting cachePool
 	cachePool := redis.NewCachePool(redisClient)

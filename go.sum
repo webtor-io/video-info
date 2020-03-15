@@ -7,6 +7,8 @@ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/go-redis/redis v6.15.6+incompatible h1:H9evprGPLI8+ci7fxQx6WNZHJSb7be8FqJQRhdQZ5Sg=
 github.com/go-redis/redis v6.15.6+incompatible/go.mod h1:NAIEuMOZ/fxfXJIrKDQDz8wamY7mA7PouImQ2Jvg6kA=
+github.com/go-redis/redis v6.15.7+incompatible h1:3skhDh95XQMpnqeqNftPkQD9jL9e5e36z/1SUm6dy1U=
+github.com/go-redis/redis v6.15.7+incompatible/go.mod h1:NAIEuMOZ/fxfXJIrKDQDz8wamY7mA7PouImQ2Jvg6kA=
 github.com/go-redis/redis/v7 v7.0.0-beta.4 h1:p6z7Pde69EGRWvlC++y8aFcaWegyrKHzOBGo0zUACTQ=
 github.com/go-redis/redis/v7 v7.0.0-beta.4/go.mod h1:xhhSbUMTsleRPur+Vgx9sUHtyN33bdjxY+9/0n9Ig8s=
 github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b/go.mod h1:SBH7ygxi8pfUlaOkMMuAQtPIUF8ecWP5IEl/CR7VP2Q=
@@ -43,6 +45,8 @@ github.com/urfave/cli v1.22.1 h1:+mkCCcOFKPnCmVYVcURKps1Xe+3zP90gSYGNfRkjoIY=
 github.com/urfave/cli v1.22.1/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/webtor-io/common-services v0.0.0-20200102124507-e840419c0302 h1:VMzjjZZN8g46/qdALrQgwbXg16q2ERCcg7+4AidXIn4=
 github.com/webtor-io/common-services v0.0.0-20200102124507-e840419c0302/go.mod h1:uEiUxCfc9HyToIPVAFSD9XkZs0UZlxPc04zYTovLXrA=
+github.com/webtor-io/common-services v0.0.0-20200315170226-d438614cbc09 h1:0EBUkSyh0ZGVr6QwGEThO6xrzSD2MJS9NNtTr1ZU+Y0=
+github.com/webtor-io/common-services v0.0.0-20200315170226-d438614cbc09/go.mod h1:G4G/lV+VXyWWhQuCpviyntr83aTux08SoWuql5jjB2Y=
 github.com/webtor-io/video-info/common-services v0.0.0-20191111202001-ca1f4dc23375 h1:37Zz3KIp7yDnKh6NAS08djbmtgX0RYXbKJDWo8uZavM=
 github.com/webtor-io/video-info/common-services v0.0.0-20191111202001-ca1f4dc23375/go.mod h1:u5hbQBXwRNhQhB/ghn3SFDTueA9m4bUCUYEiBxpqJxY=
 golang.org/x/exp v0.0.0-20190121172915-509febef88a4/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=

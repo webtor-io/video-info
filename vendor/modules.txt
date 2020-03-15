@@ -1,6 +1,6 @@
 # github.com/cpuguy83/go-md2man/v2 v2.0.0-20190314233015-f79a8a8ca69d
 github.com/cpuguy83/go-md2man/v2/md2man
-# github.com/go-redis/redis v6.15.6+incompatible
+# github.com/go-redis/redis v6.15.7+incompatible
 github.com/go-redis/redis
 github.com/go-redis/redis/internal
 github.com/go-redis/redis/internal/consistenthash
@@ -35,7 +35,7 @@ github.com/shurcooL/sanitized_anchor_name
 github.com/sirupsen/logrus
 # github.com/urfave/cli v1.22.1
 github.com/urfave/cli
-# github.com/webtor-io/common-services v0.0.0-20200102124507-e840419c0302
+# github.com/webtor-io/common-services v0.0.0-20200315170226-d438614cbc09
 github.com/webtor-io/common-services
 # golang.org/x/sys v0.0.0-20190422165155-953cdadca894
 golang.org/x/sys/unix
