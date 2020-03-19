@@ -141,7 +141,7 @@ func (s *Web) Serve() error {
 		for _, s := range subs {
 			res = append(res, Subtitle{
 				SrcLang: s.ISO639,
-				Label:   fmt.Sprintf("[OpenSubtitles.org] %s", s.LanguageName),
+				Label:   s.LanguageName,
 				Src:     fmt.Sprintf("/opensubtitles/%v.%v", s.IDSubtitleFile, s.SubFormat),
 				Format:  s.SubFormat,
 				ID:      s.IDSubtitleFile,
