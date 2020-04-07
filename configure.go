@@ -26,7 +26,7 @@ func run(c *cli.Context) error {
 	cachePool := redis.NewCachePool(redisClient)
 
 	// Setting OSDB Client
-	client := osdb.NewClient()
+	client := osdb.NewClient(c)
 
 	// Setting searchPool
 	searchPool := osdb.NewSearchPool(client)

@@ -5,17 +5,40 @@ import (
 
 	"github.com/oz/osdb"
 	"github.com/pkg/errors"
+	"github.com/urfave/cli"
 )
 
 type Client struct {
+	user   string
+	pass   string
 	mux    sync.Mutex
 	inited bool
 	err    error
 	value  *osdb.Client
 }
 
-func NewClient() *Client {
-	return &Client{inited: false}
+const (
+	OSDB_USER = "osdb-user"
+	OSDB_PASS = "osdb-pass"
+)
+
+func RegisterOSDBCLientFlags(c *cli.App) {
+	c.Flags = append(c.Flags, cli.StringFlag{
+		Name:   OSDB_USER,
+		Usage:  "osdb user",
+		Value:  "",
+		EnvVar: "OSDB_USER",
+	})
+	c.Flags = append(c.Flags, cli.StringFlag{
+		Name:   OSDB_PASS,
+		Usage:  "osdb pass",
+		Value:  "",
+		EnvVar: "OSDB_PASS",
+	})
+}
+
+func NewClient(c *cli.Context) *Client {
+	return &Client{user: c.String(OSDB_USER), pass: c.String(OSDB_PASS), inited: false}
 }
 
 func (s *Client) get() (*osdb.Client, error) {
@@ -24,7 +47,7 @@ func (s *Client) get() (*osdb.Client, error) {
 		return nil, errors.Wrap(err, "Failed to init OSDB client")
 	}
 
-	if err = c.LogIn("", "", ""); err != nil {
+	if err = c.LogIn(s.user, s.pass, ""); err != nil {
 		return nil, errors.Wrap(err, "Failed to auth to OSDB")
 	}
 	return c, nil
