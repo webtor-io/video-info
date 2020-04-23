@@ -3,7 +3,6 @@ package osdb
 import (
 	"bytes"
 	"compress/gzip"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"sync"
@@ -12,25 +11,22 @@ import (
 
 	"github.com/webtor-io/video-info/services/redis"
 
-	"github.com/oz/osdb"
-
 	"github.com/pkg/errors"
 )
 
 type Sub struct {
-	url        string
-	id         int
-	cache      *redis.Cache
-	value      []byte
-	inited     bool
-	err        error
-	mux        sync.Mutex
-	SearchPool *SearchPool
-	logger     *logrus.Entry
+	url    string
+	id     string
+	cache  *redis.Cache
+	value  []byte
+	inited bool
+	err    error
+	mux    sync.Mutex
+	logger *logrus.Entry
 }
 
-func NewSub(url string, id int, sp *SearchPool, c *redis.Cache, logger *logrus.Entry) *Sub {
-	return &Sub{url: url, id: id, SearchPool: sp, cache: c, inited: false, logger: logger}
+func NewSub(url string, id string, c *redis.Cache, logger *logrus.Entry) *Sub {
+	return &Sub{url: url, id: id, cache: c, inited: false, logger: logger}
 }
 
 func (s *Sub) get(purge bool) ([]byte, error) {
@@ -43,29 +39,13 @@ func (s *Sub) get(purge bool) ([]byte, error) {
 			return subtitle, nil
 		}
 	}
-	subs, err := s.SearchPool.Get(s.url, s.cache, purge)
+	s.logger.WithField("subSrc", s.url).Info("Fetching subtitle")
+	r, err := http.Get(s.url)
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed to fetch subtitles")
-	}
-	var sub *osdb.Subtitle
-	for _, ss := range subs {
-		if ss.IDSubtitleFile == fmt.Sprintf("%d", s.id) {
-			sub = &ss
-			break
-		}
-	}
-	if sub == nil {
-		return nil, errors.New("Failed to find subtitle by id")
-	}
-	// src := strings.Replace(sub.SubDownloadLink, "download/", "download/subformat-vtt/", 1)
-	src := sub.SubDownloadLink
-	s.logger.WithField("subSrc", src).Info("Fetching subtitle")
-	r, err := http.Get(src)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to fetch subtitle url=%v", src)
+		return nil, errors.Wrapf(err, "Failed to fetch subtitle url=%v", s.url)
 	}
 	if r.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("Bad status code=%v url=%v", r.StatusCode, src)
+		return nil, errors.Errorf("Bad status code=%v url=%v", r.StatusCode, s.url)
 	}
 	body, err := ioutil.ReadAll(r.Body)
 

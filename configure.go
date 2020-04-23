@@ -31,15 +31,18 @@ func run(c *cli.Context) error {
 	// Setting searchPool
 	searchPool := osdb.NewSearchPool(client)
 
+	// Setting imdbSearchPool
+	imdbSearchPool := osdb.NewIMDBSearchPool(client)
+
 	// Setting subsPool
-	subsPool := osdb.NewSubsPool(searchPool)
+	subsPool := osdb.NewSubsPool()
 
 	// Setting ProbeService
 	probe := cs.NewProbe(c)
 	defer probe.Close()
 
 	// Setting WebService
-	web := s.NewWeb(c, searchPool, subsPool, cachePool)
+	web := s.NewWeb(c, searchPool, imdbSearchPool, subsPool, cachePool)
 	defer web.Close()
 
 	// Setting ServeService

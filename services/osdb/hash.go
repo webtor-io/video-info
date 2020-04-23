@@ -18,6 +18,7 @@ type Hash struct {
 	url    string
 	cache  *redis.Cache
 	hash   uint64
+	size   int64
 	inited bool
 	err    error
 	mux    sync.Mutex
@@ -27,14 +28,14 @@ func NewHash(url string, c *redis.Cache) *Hash {
 	return &Hash{url: url, cache: c, inited: false}
 }
 
-func (s *Hash) get(purge bool) (uint64, error) {
+func (s *Hash) get(purge bool) (uint64, int64, error) {
 	if !purge {
-		hash, err := s.cache.GetHash()
+		hash, size, err := s.cache.GetHashAndSize()
 		if err != nil {
-			return 0, errors.Wrap(err, "Failed to get hash from cache")
+			return 0, 0, errors.Wrap(err, "Failed to get hash and size from cache")
 		}
-		if hash != 0 {
-			return hash, nil
+		if hash != 0 && size != 0 {
+			return hash, size, nil
 		}
 	}
 	r := sh.New(s.url)
@@ -47,29 +48,29 @@ func (s *Hash) get(purge bool) (uint64, error) {
 		Timeout:   5 * time.Minute,
 		Transport: myTransport,
 	}
-	hash, err := makeHash(r)
+	hash, size, err := makeHash(r)
 	if err != nil {
-		return 0, errors.Wrap(err, "Failed to get hash")
+		return 0, 0, errors.Wrap(err, "Failed to get hash")
 	}
-	err = s.cache.SetHash(hash)
+	err = s.cache.SetHashAndSize(hash, size)
 	if err != nil {
-		return 0, errors.Wrap(err, "Failed to store hash in cache")
+		return 0, 0, errors.Wrap(err, "Failed to store hash in cache")
 	}
-	return hash, nil
+	return hash, size, nil
 }
 
-func (s *Hash) Get(purge bool) (uint64, error) {
+func (s *Hash) Get(purge bool) (uint64, int64, error) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	if purge {
 		s.inited = false
 	}
 	if s.inited {
-		return s.hash, s.err
+		return s.hash, s.size, s.err
 	}
-	s.hash, s.err = s.get(purge)
+	s.hash, s.size, s.err = s.get(purge)
 	s.inited = true
-	return s.hash, s.err
+	return s.hash, s.size, s.err
 }
 
 // https://trac.opensubtitles.org/projects/opensubtitles/wiki/HashSourceCodes#GO
@@ -77,25 +78,25 @@ const (
 	ChunkSize = 65536 // 64k
 )
 
-func makeHash(r *sh.SeekingHTTP) (uint64, error) {
+func makeHash(r *sh.SeekingHTTP) (uint64, int64, error) {
 	var hash uint64 = 0
 	size, err := r.Size()
 	if err != nil {
-		return 0, errors.Wrap(err, "Unable to read size")
+		return 0, 0, errors.Wrap(err, "Unable to read size")
 	}
 	if size < ChunkSize {
-		return 0, errors.Errorf("File is too small %v", size)
+		return 0, 0, errors.Errorf("File is too small %v", size)
 	}
 
 	// Read head and tail blocks.
 	buf := make([]byte, ChunkSize*2)
 	err = readChunk(r, 0, buf[:ChunkSize])
 	if err != nil {
-		return 0, errors.Wrap(err, "Failed to read head block")
+		return 0, 0, errors.Wrap(err, "Failed to read head block")
 	}
 	err = readChunk(r, size-ChunkSize, buf[ChunkSize:])
 	if err != nil {
-		return 0, errors.Wrap(err, "Failed to read tail block")
+		return 0, 0, errors.Wrap(err, "Failed to read tail block")
 	}
 
 	// Convert to uint64, and sum.
@@ -103,13 +104,13 @@ func makeHash(r *sh.SeekingHTTP) (uint64, error) {
 	reader := bytes.NewReader(buf)
 	err = binary.Read(reader, binary.LittleEndian, &nums)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	for _, num := range nums {
 		hash += num
 	}
 
-	return hash + uint64(size), nil
+	return hash + uint64(size), size, nil
 }
 
 // Read a chunk of a file at `offset` so as to fill `buf`.

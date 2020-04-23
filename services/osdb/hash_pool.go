@@ -14,7 +14,7 @@ func NewHashPool() *HashPool {
 	return &HashPool{}
 }
 
-func (s *HashPool) Get(url string, c *redis.Cache, purge bool) (uint64, error) {
+func (s *HashPool) Get(url string, c *redis.Cache, purge bool) (uint64, int64, error) {
 	v, loaded := s.sm.LoadOrStore(url, NewHash(url, c))
 	if !loaded {
 		defer s.sm.Delete(url)

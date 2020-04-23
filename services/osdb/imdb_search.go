@@ -1,7 +1,6 @@
 package osdb
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/webtor-io/video-info/services/redis"
@@ -11,22 +10,21 @@ import (
 	"github.com/pkg/errors"
 )
 
-type Search struct {
-	url      string
-	cache    *redis.Cache
-	value    []osdb.Subtitle
-	inited   bool
-	err      error
-	mux      sync.Mutex
-	hashPool *HashPool
-	cl       *Client
+type IMDBSearch struct {
+	imdbID string
+	cache  *redis.Cache
+	value  []osdb.Subtitle
+	inited bool
+	err    error
+	mux    sync.Mutex
+	cl     *Client
 }
 
-func NewSearch(url string, hp *HashPool, cl *Client, c *redis.Cache) *Search {
-	return &Search{url: url, hashPool: hp, cl: cl, cache: c, inited: false}
+func NewIMDBSearch(imdbID string, cl *Client, c *redis.Cache) *IMDBSearch {
+	return &IMDBSearch{imdbID: imdbID, cl: cl, cache: c, inited: false}
 }
 
-func (s *Search) get(purge bool) (osdb.Subtitles, error) {
+func (s *IMDBSearch) get(purge bool) (osdb.Subtitles, error) {
 	if !purge {
 		subtitles, err := s.cache.GetSubtitles()
 		if err != nil {
@@ -36,11 +34,6 @@ func (s *Search) get(purge bool) (osdb.Subtitles, error) {
 			return subtitles, nil
 		}
 	}
-	hash, size, err := s.hashPool.Get(s.url, s.cache, purge)
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to get hash")
-	}
-
 	cl, err := s.cl.Get()
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to get OSDB client")
@@ -48,11 +41,9 @@ func (s *Search) get(purge bool) (osdb.Subtitles, error) {
 	params := []interface{}{
 		cl.Token,
 		[]struct {
-			Hash          string `xmlrpc:"moviehash"`
-			MovieByteSize int64  `xmlrpc:"moviebytesize"`
+			Hash string `xmlrpc:"imdbid"`
 		}{{
-			fmt.Sprintf("%x", hash),
-			size,
+			s.imdbID,
 		}},
 	}
 	subtitles, err := cl.SearchSubtitles(&params)
@@ -66,7 +57,7 @@ func (s *Search) get(purge bool) (osdb.Subtitles, error) {
 	return subtitles, nil
 }
 
-func (s *Search) Get(purge bool) (osdb.Subtitles, error) {
+func (s *IMDBSearch) Get(purge bool) (osdb.Subtitles, error) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	if purge {

@@ -9,18 +9,17 @@ import (
 )
 
 type SubsPool struct {
-	sm         sync.Map
-	searchPool *SearchPool
+	sm sync.Map
 }
 
-func NewSubsPool(sp *SearchPool) *SubsPool {
-	return &SubsPool{searchPool: sp}
+func NewSubsPool() *SubsPool {
+	return &SubsPool{}
 }
 
-func (s *SubsPool) Get(url string, id int, c *redis.Cache, purge bool, logger *logrus.Entry) ([]byte, error) {
-	v, loaded := s.sm.LoadOrStore(url, NewSub(url, id, s.searchPool, c, logger))
+func (s *SubsPool) Get(url string, id string, c *redis.Cache, purge bool, logger *logrus.Entry) ([]byte, error) {
+	v, loaded := s.sm.LoadOrStore(id, NewSub(url, id, c, logger))
 	if !loaded {
-		defer s.sm.Delete(url)
+		defer s.sm.Delete(id)
 	}
 	return v.(*Sub).Get(purge)
 }
