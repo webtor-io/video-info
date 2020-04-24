@@ -144,7 +144,7 @@ func (s *Web) Serve() error {
 			}
 		}
 		if sub == nil {
-			logger.WithError(err).Error("Failed to find subtitle by id")
+			logger.WithField("subs", subs).WithError(err).Error("Failed to find subtitle by id")
 			w.WriteHeader(500)
 			return
 		}
