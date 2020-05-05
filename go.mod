@@ -1,8 +1,9 @@
 module github.com/webtor-io/video-info
 
-go 1.13
+go 1.14
 
 require (
+	github.com/bakins/logrus-middleware v0.0.0-20180426214643-ce4c6f8deb07
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/go-redis/redis/v7 v7.0.0-beta.4 // indirect
 	github.com/jeffallen/seekinghttp v0.0.0-20171214161738-f41d11cb25b7

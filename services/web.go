@@ -14,6 +14,9 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"github.com/webtor-io/video-info/services/osdb"
+
+	logrusmiddleware "github.com/bakins/logrus-middleware"
+	joonix "github.com/joonix/log"
 )
 
 type Web struct {
@@ -195,7 +198,13 @@ func (s *Web) Serve() error {
 		json.NewEncoder(w).Encode(res)
 	})
 	log.Infof("Serving Web at %v", addr)
-	return http.Serve(ln, mux)
+
+	logger := log.New()
+	logger.SetFormatter(joonix.NewFormatter())
+	l := logrusmiddleware.Middleware{
+		Logger: logger,
+	}
+	return http.Serve(ln, l.Handler(mux, ""))
 }
 
 func (s *Web) Close() {
