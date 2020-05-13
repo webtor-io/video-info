@@ -27,11 +27,13 @@ type Web struct {
 	imdbSearchPool *osdb.IMDBSearchPool
 	subsPool       *osdb.SubsPool
 	cachePool      *redis.CachePool
+	sourceURL      string
 }
 
 const (
-	WEB_HOST_FLAG = "host"
-	WEB_PORT_FLAG = "port"
+	WEB_HOST_FLAG  = "host"
+	WEB_PORT_FLAG  = "port"
+	WEB_SOURCE_URL = "source-url"
 )
 
 type Subtitle struct {
@@ -46,7 +48,7 @@ type Subtitle struct {
 type Subtitles []Subtitle
 
 func NewWeb(c *cli.Context, sp *osdb.SearchPool, isp *osdb.IMDBSearchPool, sbp *osdb.SubsPool, cp *redis.CachePool) *Web {
-	return &Web{host: c.String(WEB_HOST_FLAG), port: c.Int(WEB_PORT_FLAG), searchPool: sp, imdbSearchPool: isp, subsPool: sbp, cachePool: cp}
+	return &Web{sourceURL: c.String(WEB_SOURCE_URL), host: c.String(WEB_HOST_FLAG), port: c.Int(WEB_PORT_FLAG), searchPool: sp, imdbSearchPool: isp, subsPool: sbp, cachePool: cp}
 }
 
 func RegisterWebFlags(c *cli.App) {
@@ -55,6 +57,12 @@ func RegisterWebFlags(c *cli.App) {
 		Usage: "listening host",
 		Value: "",
 	})
+	c.Flags = append(c.Flags, cli.StringFlag{
+		Name:   WEB_SOURCE_URL,
+		Usage:  "source url",
+		Value:  "",
+		EnvVar: "SOURCE_URL",
+	})
 	c.Flags = append(c.Flags, cli.IntFlag{
 		Name:  WEB_PORT_FLAG,
 		Usage: "http listening port",
@@ -62,8 +70,10 @@ func RegisterWebFlags(c *cli.App) {
 	})
 }
 
-func getSourceURL(r *http.Request) string {
-	// return "https://api.webtor.io/08ada5a7a6183aae1e09d831df6748d566095a10/Sintel%2FSintel.mp4?download-id=fe0f6f562dd2e966ca289529526f4446&user-id=d38624c473ee845501740f69de74955e&token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZ2VudCI6Ik1vemlsbGEvNS4wIChNYWNpbnRvc2g7IEludGVsIE1hYyBPUyBYIDEwXzE1XzMpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2Vja28pIENocm9tZS84MS4wLjQwNDQuMTEzIFNhZmFyaS81MzcuMzYiLCJleHAiOjE1ODc2OTgxNTQsInJhdGUiOiIzTSIsImdyYWNlIjozNjAwLCJwcmVzZXQiOiJ1bHRyYWZhc3QifQ.gcRioZ-xirDeyL1onuano5gc0AJx5wKQJO8fPFJXzNM&api-key=8acbcf1e-732c-4574-a3bf-27e6a85b86f1"
+func (s *Web) getSourceURL(r *http.Request) string {
+	if s.sourceURL != "" {
+		return s.sourceURL
+	}
 	return r.Header.Get("X-Source-Url")
 }
 
@@ -108,7 +118,7 @@ func (s *Web) Serve() error {
 		if len(values) == 0 {
 			w.WriteHeader(400)
 		}
-		sourceURL := getSourceURL(r)
+		sourceURL := s.getSourceURL(r)
 		purge := r.URL.Query().Get("purge") == "true"
 		imdbID := r.URL.Query().Get("imdb-id")
 
@@ -168,7 +178,7 @@ func (s *Web) Serve() error {
 	mux.HandleFunc("/subtitles.json", func(w http.ResponseWriter, r *http.Request) {
 		purge := r.URL.Query().Get("purge") == "true"
 		imdbID := r.URL.Query().Get("imdb-id")
-		sourceURL := getSourceURL(r)
+		sourceURL := s.getSourceURL(r)
 		logger := log.WithFields(log.Fields{
 			"imdbID":    imdbID,
 			"infoHash":  getInfoHash(r),
