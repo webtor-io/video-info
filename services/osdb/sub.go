@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/webtor-io/video-info/services/redis"
+	s "github.com/webtor-io/video-info/services/s3"
 
 	"github.com/pkg/errors"
 )
@@ -18,6 +19,7 @@ type Sub struct {
 	url    string
 	id     string
 	cache  *redis.Cache
+	s3     *s.S3Storage
 	value  []byte
 	inited bool
 	err    error
@@ -25,8 +27,8 @@ type Sub struct {
 	logger *logrus.Entry
 }
 
-func NewSub(url string, id string, c *redis.Cache, logger *logrus.Entry) *Sub {
-	return &Sub{url: url, id: id, cache: c, inited: false, logger: logger}
+func NewSub(url string, id string, c *redis.Cache, s3 *s.S3Storage, logger *logrus.Entry) *Sub {
+	return &Sub{url: url, id: id, cache: c, inited: false, logger: logger, s3: s3}
 }
 
 func (s *Sub) get(purge bool) ([]byte, error) {
@@ -37,6 +39,15 @@ func (s *Sub) get(purge bool) ([]byte, error) {
 		}
 		if subtitle != nil {
 			return subtitle, nil
+		}
+		if s.s3 != nil {
+			subtitle, err := s.s3.GetSub(s.id)
+			if err != nil {
+				return nil, errors.Wrap(err, "Failed to get subtitle from s3")
+			}
+			if subtitle != nil {
+				return subtitle, nil
+			}
 		}
 	}
 	s.logger.WithField("subSrc", s.url).Info("Fetching subtitle")
@@ -64,6 +75,13 @@ func (s *Sub) get(purge bool) ([]byte, error) {
 	err = s.cache.SetSubtitle(s.id, res)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to store subtitle in cache")
+	}
+
+	if s.s3 != nil {
+		err := s.s3.PutSub(s.id, res)
+		if err != nil {
+			return nil, errors.Wrap(err, "Failed to store subtitle in s3")
+		}
 	}
 	return res, nil
 }

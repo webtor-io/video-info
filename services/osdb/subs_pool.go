@@ -7,6 +7,7 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/webtor-io/video-info/services/redis"
+	"github.com/webtor-io/video-info/services/s3"
 )
 
 const (
@@ -18,10 +19,11 @@ type SubsPool struct {
 	timers sync.Map
 	expire time.Duration
 	mux    sync.Mutex
+	s3     *s3.S3Storage
 }
 
-func NewSubsPool() *SubsPool {
-	return &SubsPool{expire: time.Duration(SUB_TTL) * time.Second}
+func NewSubsPool(s3 *s3.S3Storage) *SubsPool {
+	return &SubsPool{expire: time.Duration(SUB_TTL) * time.Second, s3: s3}
 }
 
 func (s *SubsPool) Get(url string, id string, c *redis.Cache, purge bool, logger *logrus.Entry) ([]byte, error) {
@@ -29,7 +31,7 @@ func (s *SubsPool) Get(url string, id string, c *redis.Cache, purge bool, logger
 		s.sm.Delete(id)
 		s.timers.Delete(id)
 	}
-	v, _ := s.sm.LoadOrStore(id, NewSub(url, id, c, logger))
+	v, _ := s.sm.LoadOrStore(id, NewSub(url, id, c, s.s3, logger))
 	t, tLoaded := s.timers.LoadOrStore(id, time.NewTimer(s.expire))
 	timer := t.(*time.Timer)
 	if !tLoaded {

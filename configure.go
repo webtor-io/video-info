@@ -7,6 +7,7 @@ import (
 	s "github.com/webtor-io/video-info/services"
 	"github.com/webtor-io/video-info/services/osdb"
 	"github.com/webtor-io/video-info/services/redis"
+	"github.com/webtor-io/video-info/services/s3"
 )
 
 func configure(app *cli.App) {
@@ -14,11 +15,19 @@ func configure(app *cli.App) {
 	cs.RegisterProbeFlags(app)
 	s.RegisterWebFlags(app)
 	cs.RegisterRedisClientFlags(app)
+	cs.RegisterS3ClientFlags(app)
+	s3.RegisterS3StorageFlags(app)
 
 	app.Action = run
 }
 
 func run(c *cli.Context) error {
+	// Setting S3Client
+	s3cl := cs.NewS3Client(c)
+
+	// Setting S3Storage
+	s3st := s3.NewS3Storage(c, s3cl)
+
 	// Setting redisClient
 	redisClient := cs.NewRedisClient(c)
 
@@ -35,7 +44,7 @@ func run(c *cli.Context) error {
 	imdbSearchPool := osdb.NewIMDBSearchPool(client)
 
 	// Setting subsPool
-	subsPool := osdb.NewSubsPool()
+	subsPool := osdb.NewSubsPool(s3st)
 
 	// Setting ProbeService
 	probe := cs.NewProbe(c)
