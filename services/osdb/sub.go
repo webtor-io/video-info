@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/sirupsen/logrus"
@@ -71,6 +72,10 @@ func (s *Sub) get(purge bool) ([]byte, error) {
 		return nil, errors.Errorf("Failed to ungzip")
 	}
 	res := resBuf.Bytes()
+
+	if strings.Contains(string(res), "In order to continue OpenSubtitles.org") {
+		return nil, errors.Errorf("Failed to get subtitle. Failed to auth (\"In order to continue OpenSubtitles.org subtitles service you need to Log In\")")
+	}
 
 	err = s.cache.SetSubtitle(s.id, res)
 	if err != nil {
