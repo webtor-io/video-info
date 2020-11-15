@@ -1,6 +1,12 @@
 steps:
 - name: 'gcr.io/cloud-builders/docker'
-  args: ["build", "-t", "gcr.io/$PROJECT_ID/$REPO_NAME:$REVISION_ID", "."]
+  entrypoint: 'bash'
+  args: ['-c', 'docker pull gcr.io/$PROJECT_ID/$REPO_NAME:latest || exit 0']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ["build",
+    "-t", "gcr.io/$PROJECT_ID/$REPO_NAME:$REVISION_ID",
+    '--cache-from', 'gcr.io/$PROJECT_ID/$REPO_NAME:latest',
+    "."]
 - name: gcr.io/cloud-builders/docker
   args: ['tag',
     'gcr.io/$PROJECT_ID/$REPO_NAME:$REVISION_ID',
@@ -9,12 +15,3 @@ steps:
   args: ["push", "gcr.io/$PROJECT_ID/$REPO_NAME:$REVISION_ID"]
 - name: 'gcr.io/cloud-builders/docker'
   args: ["push", "gcr.io/$PROJECT_ID/$REPO_NAME:latest"]
-# - name: 'gcr.io/cloud-builders/gcloud'
-#   entrypoint: 'bash'
-#   args:
-#   - '-c'
-#   - |
-#     gcloud components install kubectl
-#     gsutil cp gs://kube-key/kubeconfig .
-#     export KUBECONFIG=kubeconfig
-#     kubectl set image deployment/video-info --namespace=webtor video-info=gcr.io/$PROJECT_ID/$REPO_NAME:$REVISION_ID

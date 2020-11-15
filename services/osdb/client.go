@@ -54,21 +54,22 @@ func (s *Client) get() (*osdb.Client, error) {
 }
 
 func (s *Client) Get() (*osdb.Client, error) {
-	s.mux.Lock()
-	defer s.mux.Unlock()
-	if s.err != nil {
-		s.inited = false
-	}
-	if s.inited {
-		return s.value, s.err
-	}
-	s.value, s.err = s.get()
-	s.inited = true
-	return s.value, s.err
+	return s.get()
+	// s.mux.Lock()
+	// defer s.mux.Unlock()
+	// if s.err != nil {
+	// 	s.inited = false
+	// }
+	// if s.inited {
+	// 	return s.value, s.err
+	// }
+	// s.value, s.err = s.get()
+	// s.inited = true
+	// return s.value, s.err
 }
 
-func (s *Client) Close() {
-	if s.value != nil {
-		s.value.Close()
-	}
-}
+// func (s *Client) Close() {
+// 	if s.value != nil {
+// 		s.value.Close()
+// 	}
+// }
