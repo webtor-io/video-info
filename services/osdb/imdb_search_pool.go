@@ -1,6 +1,7 @@
 package osdb
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/webtor-io/video-info/services/redis"
@@ -19,6 +20,7 @@ func NewIMDBSearchPool(cl *Client) *IMDBSearchPool {
 }
 
 func (s *IMDBSearchPool) Get(imdbID string, c *redis.Cache, purge bool) (osdb.Subtitles, error) {
+	imdbID = strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(imdbID), "tt"), "0")
 	v, loaded := s.sm.LoadOrStore(imdbID, NewIMDBSearch(imdbID, s.cl, c))
 	if !loaded {
 		defer s.sm.Delete(imdbID)
