@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net/http"
+	"time"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	cs "github.com/webtor-io/common-services"
@@ -23,7 +26,9 @@ func configure(app *cli.App) {
 
 func run(c *cli.Context) error {
 	// Setting S3Client
-	s3cl := cs.NewS3Client(c)
+	s3cl := cs.NewS3Client(c, &http.Client{
+		Timeout: time.Second * 60,
+	})
 
 	// Setting S3Storage
 	s3st := s3.NewS3Storage(c, s3cl)
