@@ -146,7 +146,7 @@ func (s *Web) Serve() error {
 		subs, err := s.search(sourceURL, imdbID, purge, cache, logger)
 		if err != nil {
 			logger.WithError(err).Error("Failed to get subtitles")
-			w.WriteHeader(500)
+			w.WriteHeader(404)
 			return
 		}
 
@@ -159,7 +159,7 @@ func (s *Web) Serve() error {
 		}
 		if sub == nil {
 			logger.WithField("subs", subs).WithError(err).Error("Failed to find subtitle by id")
-			w.WriteHeader(500)
+			w.WriteHeader(404)
 			return
 		}
 		logger.Info("Fetching subtitle")
@@ -168,7 +168,7 @@ func (s *Web) Serve() error {
 		su, err := s.subsPool.Get(id, cache, purge, logger)
 		if err != nil {
 			logger.WithError(err).Error("Failed to get subtitle")
-			w.WriteHeader(500)
+			w.WriteHeader(404)
 			return
 		}
 		// w.Header().Set("Content-Encoding", "gzip")
@@ -190,7 +190,7 @@ func (s *Web) Serve() error {
 		subs, err := s.search(sourceURL, imdbID, purge, s.cachePool.Get(getCacheKey(r)), logger)
 		if err != nil {
 			logger.WithError(err).Error("Failed to get subtitles")
-			w.WriteHeader(500)
+			w.WriteHeader(404)
 			return
 		}
 		res := Subtitles{}
