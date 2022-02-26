@@ -1,10 +1,7 @@
 package osdb
 
 import (
-	"bytes"
-	"compress/gzip"
 	"io/ioutil"
-	"net/http"
 	"strings"
 	"sync"
 
@@ -17,8 +14,8 @@ import (
 )
 
 type Sub struct {
-	url    string
-	id     string
+	id     int
+	cl     *Client
 	cache  *redis.Cache
 	s3     *s.S3Storage
 	value  []byte
@@ -28,15 +25,21 @@ type Sub struct {
 	logger *logrus.Entry
 }
 
-func NewSub(url string, id string, c *redis.Cache, s3 *s.S3Storage, logger *logrus.Entry) *Sub {
-	return &Sub{url: url, id: id, cache: c, inited: false, logger: logger, s3: s3}
+func NewSub(id int, cl *Client, c *redis.Cache, s3 *s.S3Storage, logger *logrus.Entry) *Sub {
+	return &Sub{
+		id:     id,
+		cl:     cl,
+		cache:  c,
+		logger: logger,
+		s3:     s3,
+	}
 }
 
 func (s *Sub) get(purge bool) ([]byte, error) {
 	if !purge {
 		subtitle, err := s.cache.GetSubtitle(s.id)
 		if err != nil {
-			return nil, errors.Wrap(err, "Failed to get subtitle from cache")
+			return nil, errors.Wrap(err, "failed to get subtitle from cache")
 		}
 		if subtitle != nil {
 			return subtitle, nil
@@ -44,48 +47,50 @@ func (s *Sub) get(purge bool) ([]byte, error) {
 		if s.s3 != nil {
 			subtitle, err := s.s3.GetSub(s.id)
 			if err != nil {
-				return nil, errors.Wrap(err, "Failed to get subtitle from s3")
+				return nil, errors.Wrap(err, "failed to get subtitle from s3")
 			}
 			if subtitle != nil {
 				return subtitle, nil
 			}
 		}
 	}
-	s.logger.WithField("subSrc", s.url).Info("Fetching subtitle")
-	r, err := http.Get(s.url)
-	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to fetch subtitle url=%v", s.url)
-	}
-	if r.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("Bad status code=%v url=%v", r.StatusCode, s.url)
-	}
-	body, err := ioutil.ReadAll(r.Body)
 
-	rgz, err := gzip.NewReader(bytes.NewBuffer(body))
+	cl, err := s.cl.Get()
 	if err != nil {
-		return nil, errors.Errorf("Failed to init gzip reader")
+		return nil, errors.Wrap(err, "failed to get OSDB client")
 	}
+	sfs, err := cl.DownloadSubtitlesByIds([]int{s.id})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get OSDB subtitles")
+	}
+	if len(sfs) == 0 {
+		return nil, errors.Errorf("subtitles empty")
+	}
+	sf := sfs[0]
+	r, err := sf.Reader()
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get subtitle reader")
+	}
+	defer r.Close()
 
-	var resBuf bytes.Buffer
-	_, err = resBuf.ReadFrom(rgz)
+	res, err := ioutil.ReadAll(r)
 	if err != nil {
-		return nil, errors.Errorf("Failed to ungzip")
+		return nil, errors.Wrap(err, "failed to read subtitle")
 	}
-	res := resBuf.Bytes()
 
 	if strings.Contains(string(res), "In order to continue OpenSubtitles.org") {
-		return nil, errors.Errorf("Failed to get subtitle. Failed to auth (\"In order to continue OpenSubtitles.org subtitles service you need to Log In\")")
+		return nil, errors.Errorf("failed to get subtitle. Failed to auth (\"In order to continue OpenSubtitles.org subtitles service you need to Log In\")")
 	}
 
 	err = s.cache.SetSubtitle(s.id, res)
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed to store subtitle in cache")
+		return nil, errors.Wrap(err, "failed to store subtitle in cache")
 	}
 
 	if s.s3 != nil {
 		err := s.s3.PutSub(s.id, res)
 		if err != nil {
-			return nil, errors.Wrap(err, "Failed to store subtitle in s3")
+			return nil, errors.Wrap(err, "failed to store subtitle in s3")
 		}
 	}
 	return res, nil

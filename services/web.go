@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 
 	"github.com/webtor-io/video-info/services/redis"
 
@@ -134,7 +135,7 @@ func (s *Web) Serve() error {
 			w.WriteHeader(400)
 			return
 		}
-		id := values[1]
+		id, err := strconv.Atoi(values[1])
 		if err != nil {
 			logger.WithError(err).WithField("id", values[1]).Error("Failed to parse id")
 			w.WriteHeader(400)
@@ -151,7 +152,7 @@ func (s *Web) Serve() error {
 
 		var sub *o.Subtitle
 		for _, ss := range subs {
-			if ss.IDSubtitleFile == id {
+			if ss.IDSubtitleFile == strconv.Itoa(id) {
 				sub = &ss
 				break
 			}
@@ -164,7 +165,7 @@ func (s *Web) Serve() error {
 		logger.Info("Fetching subtitle")
 
 		// src := strings.Replace(sub.SubDownloadLink, "download/", "download/subformat-vtt/", 1)
-		su, err := s.subsPool.Get(sub.SubDownloadLink, id, cache, purge, logger)
+		su, err := s.subsPool.Get(id, cache, purge, logger)
 		if err != nil {
 			logger.WithError(err).Error("Failed to get subtitle")
 			w.WriteHeader(500)

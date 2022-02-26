@@ -3,6 +3,7 @@ package s3
 import (
 	"bytes"
 	"io/ioutil"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -49,8 +50,8 @@ func NewS3Storage(c *cli.Context, cl *cs.S3Client) *S3Storage {
 	}
 }
 
-func (s *S3Storage) GetSub(id string) ([]byte, error) {
-	key := "opensubtitles/" + id
+func (s *S3Storage) GetSub(id int) ([]byte, error) {
+	key := "opensubtitles/" + strconv.Itoa(id)
 	log.Infof("Fetching sub key=%v bucket=%v", key, s.bucket)
 	r, err := s.cl.Get().GetObject(&s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
@@ -72,8 +73,8 @@ func (s *S3Storage) GetSub(id string) ([]byte, error) {
 	return b, nil
 }
 
-func (s *S3Storage) PutSub(id string, data []byte) (err error) {
-	key := "opensubtitles/" + id
+func (s *S3Storage) PutSub(id int, data []byte) (err error) {
+	key := "opensubtitles/" + strconv.Itoa(id)
 	log.Infof("Storing sub key=%v bucket=%v", key, s.bucket)
 	_, err = s.cl.Get().PutObject(&s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),

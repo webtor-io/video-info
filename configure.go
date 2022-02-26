@@ -17,6 +17,7 @@ func configure(app *cli.App) {
 	app.Flags = []cli.Flag{}
 	cs.RegisterProbeFlags(app)
 	s.RegisterWebFlags(app)
+	osdb.RegisterOSDBCLientFlags(app)
 	cs.RegisterRedisClientFlags(app)
 	cs.RegisterS3ClientFlags(app)
 	s3.RegisterS3StorageFlags(app)
@@ -49,7 +50,7 @@ func run(c *cli.Context) error {
 	imdbSearchPool := osdb.NewIMDBSearchPool(client)
 
 	// Setting subsPool
-	subsPool := osdb.NewSubsPool(s3st)
+	subsPool := osdb.NewSubsPool(s3st, client)
 
 	// Setting ProbeService
 	probe := cs.NewProbe(c)

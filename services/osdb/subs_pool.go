@@ -20,18 +20,23 @@ type SubsPool struct {
 	expire time.Duration
 	mux    sync.Mutex
 	s3     *s3.S3Storage
+	cl     *Client
 }
 
-func NewSubsPool(s3 *s3.S3Storage) *SubsPool {
-	return &SubsPool{expire: time.Duration(SUB_TTL) * time.Second, s3: s3}
+func NewSubsPool(s3 *s3.S3Storage, cl *Client) *SubsPool {
+	return &SubsPool{
+		expire: time.Duration(SUB_TTL) * time.Second,
+		s3:     s3,
+		cl:     cl,
+	}
 }
 
-func (s *SubsPool) Get(url string, id string, c *redis.Cache, purge bool, logger *logrus.Entry) ([]byte, error) {
+func (s *SubsPool) Get(id int, c *redis.Cache, purge bool, logger *logrus.Entry) ([]byte, error) {
 	if purge {
 		s.sm.Delete(id)
 		s.timers.Delete(id)
 	}
-	v, _ := s.sm.LoadOrStore(id, NewSub(url, id, c, s.s3, logger))
+	v, _ := s.sm.LoadOrStore(id, NewSub(id, s.cl, c, s.s3, logger))
 	t, tLoaded := s.timers.LoadOrStore(id, time.NewTimer(s.expire))
 	timer := t.(*time.Timer)
 	if !tLoaded {

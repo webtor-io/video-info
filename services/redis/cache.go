@@ -3,6 +3,7 @@ package redis
 import (
 	"bytes"
 	"encoding/gob"
+	"strconv"
 	"time"
 
 	"github.com/oz/osdb"
@@ -101,12 +102,12 @@ func (s *Cache) SetSubtitles(subs osdb.Subtitles) error {
 	return nil
 }
 
-func (s *Cache) GetSubtitle(id string) ([]byte, error) {
+func (s *Cache) GetSubtitle(id int) ([]byte, error) {
 	cl := s.cl.Get()
 	// if err != nil {
 	// 	return nil, errors.Wrap(err, "Failed to get redis client")
 	// }
-	data, err := cl.Get(s.key + "sub" + id).Bytes()
+	data, err := cl.Get(s.key + "sub" + strconv.Itoa(id)).Bytes()
 	if err == redis.Nil {
 		return nil, nil
 	}
@@ -116,12 +117,12 @@ func (s *Cache) GetSubtitle(id string) ([]byte, error) {
 	return data, nil
 }
 
-func (s *Cache) SetSubtitle(id string, data []byte) error {
+func (s *Cache) SetSubtitle(id int, data []byte) error {
 	cl := s.cl.Get()
 	// if err != nil {
 	// 	return errors.Wrap(err, "Failed to get redis client")
 	// }
-	err := cl.Set(s.key+"sub"+id, data, time.Hour*24).Err()
+	err := cl.Set(s.key+"sub"+strconv.Itoa(id), data, time.Hour*24).Err()
 	if err != nil {
 		return errors.Wrap(err, "Failed to set subtitle")
 	}
