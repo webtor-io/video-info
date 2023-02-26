@@ -2,6 +2,25 @@ package osdb
 
 import "time"
 
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	User struct {
+		AllowedDownloads    int    `json:"allowed_downloads"`
+		AllowedTranslations int    `json:"allowed_translations"`
+		Level               string `json:"level"`
+		UserId              int    `json:"user_id"`
+		ExtInstalled        bool   `json:"ext_installed"`
+		Vip                 bool   `json:"vip"`
+	} `json:"user"`
+	BaseUrl string `json:"base_url"`
+	Token   string `json:"token"`
+	Status  int    `json:"status"`
+}
+
 type SubtitleDownloadRequest struct {
 	FileID    int    `json:"file_id"`
 	SubFormat string `json:"sub_format,omitempty"`

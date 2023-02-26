@@ -201,9 +201,13 @@ func (s *Web) Serve() error {
 		}
 		res := Subtitles{}
 		for _, s := range subs {
+			label := iso6391.Name(s.Attributes.Language)
+			if label == "" {
+				label = s.Attributes.Language
+			}
 			res = append(res, Subtitle{
 				SrcLang: s.Attributes.Language,
-				Label:   fmt.Sprintf("[OpenSubtitles #%v] %v", s.Id, iso6391.Name(s.Attributes.Language)),
+				Label:   label,
 				Src:     fmt.Sprintf("/opensubtitles/%v.%v", s.Id, "vtt"),
 				Format:  "vtt",
 				ID:      s.Id,
