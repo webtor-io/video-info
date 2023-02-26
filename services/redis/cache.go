@@ -3,10 +3,9 @@ package redis
 import (
 	"bytes"
 	"encoding/gob"
+	"github.com/webtor-io/video-info/services/osdb"
 	"strconv"
 	"time"
-
-	"github.com/oz/osdb"
 
 	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
@@ -39,13 +38,13 @@ func (s *Cache) GetHashAndSize() (uint64, int64, error) {
 	res := HashAndSize{}
 	err = s.decode(data, &res)
 	if err != nil {
-		return 0, 0, errors.Wrap(err, "Failed to decode data")
+		return 0, 0, errors.Wrap(err, "failed to decode data")
 	}
 	if err == redis.Nil {
 		return 0, 0, nil
 	}
 	if err != nil {
-		return 0, 0, errors.Wrap(err, "Failed to get hash and size")
+		return 0, 0, errors.Wrap(err, "failed to get hash and size")
 	}
 	return res.Hash, res.Size, nil
 }
@@ -53,11 +52,11 @@ func (s *Cache) GetHashAndSize() (uint64, int64, error) {
 func (s *Cache) SetHashAndSize(hash uint64, size int64) error {
 	cl := s.cl.Get()
 	// if err != nil {
-	// 	return errors.Wrap(err, "Failed to get redis client")
+	// 	return errors.Wrap(err, "failed to get redis client")
 	// }
 	data, err := s.encode(HashAndSize{Hash: hash, Size: size})
 	if err != nil {
-		return errors.Wrap(err, "Failed to encode hash and size")
+		return errors.Wrap(err, "failed to encode hash and size")
 	}
 	err = cl.Set(s.key+"hashandsize", data, time.Hour*24).Err()
 	if err != nil {
@@ -66,65 +65,67 @@ func (s *Cache) SetHashAndSize(hash uint64, size int64) error {
 	return nil
 }
 
-func (s *Cache) GetSubtitles() (osdb.Subtitles, error) {
-	cl := s.cl.Get()
+func (s *Cache) GetSubtitles() ([]osdb.Subtitle, error) {
+	return nil, nil
+	//cl := s.cl.Get()
 	// if err != nil {
-	// 	return nil, errors.Wrap(err, "Failed to get redis client")
+	// 	return nil, errors.Wrap(err, "failed to get redis client")
 	// }
-	data, err := cl.Get(s.key + "subs").Bytes()
-	if err == redis.Nil {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to get subs")
-	}
-	res := osdb.Subtitles{}
-	err = s.decode(data, &res)
-	if err != nil {
-		return nil, errors.Wrap(err, "Failed to decode data")
-	}
-	return res, nil
+	//data, err := cl.Get(s.key + "subs").Bytes()
+	//if err == redis.Nil {
+	//	return nil, nil
+	//}
+	//if err != nil {
+	//	return nil, errors.Wrap(err, "failed to get subs")
+	//}
+	//var res []osdb.Subtitle
+	//err = s.decode(data, &res)
+	//if err != nil {
+	//	return nil, errors.Wrap(err, "failed to decode data")
+	//}
+	//return res, nil
 }
 
-func (s *Cache) SetSubtitles(subs osdb.Subtitles) error {
-	cl := s.cl.Get()
-	// if err != nil {
-	// 	return errors.Wrap(err, "Failed to get redis client")
-	// }
-	data, err := s.encode(subs)
-	if err != nil {
-		return errors.Wrap(err, "Failed to encode subs")
-	}
-	err = cl.Set(s.key+"subs", data, time.Hour*24).Err()
-	if err != nil {
-		return errors.Wrap(err, "Failed to set subs")
-	}
+func (s *Cache) SetSubtitles(subs []osdb.Subtitle) error {
 	return nil
+	//cl := s.cl.Get()
+	//// if err != nil {
+	//// 	return errors.Wrap(err, "Failed to get redis client")
+	//// }
+	//data, err := s.encode(subs)
+	//if err != nil {
+	//	return errors.Wrap(err, "failed to encode subs")
+	//}
+	//err = cl.Set(s.key+"subs", data, time.Hour*24).Err()
+	//if err != nil {
+	//	return errors.Wrap(err, "failed to set subs")
+	//}
+	//return nil
 }
 
-func (s *Cache) GetSubtitle(id int) ([]byte, error) {
+func (s *Cache) GetSubtitle(id int, format string) ([]byte, error) {
 	cl := s.cl.Get()
 	// if err != nil {
-	// 	return nil, errors.Wrap(err, "Failed to get redis client")
+	// 	return nil, errors.Wrap(err, "failed to get redis client")
 	// }
-	data, err := cl.Get(s.key + "sub" + strconv.Itoa(id)).Bytes()
+	data, err := cl.Get(s.key + "sub" + strconv.Itoa(id) + format).Bytes()
 	if err == redis.Nil {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, errors.Wrap(err, "Failed to get subtitle")
+		return nil, errors.Wrap(err, "failed to get subtitle")
 	}
 	return data, nil
 }
 
-func (s *Cache) SetSubtitle(id int, data []byte) error {
+func (s *Cache) SetSubtitle(id int, format string, data []byte) error {
 	cl := s.cl.Get()
 	// if err != nil {
-	// 	return errors.Wrap(err, "Failed to get redis client")
+	// 	return errors.Wrap(err, "failed to get redis client")
 	// }
-	err := cl.Set(s.key+"sub"+strconv.Itoa(id), data, time.Hour*24).Err()
+	err := cl.Set(s.key+"sub"+strconv.Itoa(id)+format, data, time.Hour*24).Err()
 	if err != nil {
-		return errors.Wrap(err, "Failed to set subtitle")
+		return errors.Wrap(err, "failed to set subtitle")
 	}
 	return nil
 }

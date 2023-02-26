@@ -11,9 +11,6 @@ WORKDIR /app
 # copy the source files
 COPY . .
 
-# enable modules
-ENV GO111MODULE=on
-
 # disable crosscompiling
 ENV CGO_ENABLED=0
 
@@ -21,9 +18,9 @@ ENV CGO_ENABLED=0
 ENV GOOS=linux
 
 # build the binary with debug information removed
-RUN go build -mod=vendor -ldflags '-w -s' -a -installsuffix cgo -o server
+RUN go build -ldflags '-w -s' -a -installsuffix cgo -o server
 
-FROM scratch
+FROM alpine:latest
 
 # copy our static linked library
 COPY --from=build /app/server .

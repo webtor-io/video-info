@@ -17,7 +17,7 @@ func configure(app *cli.App) {
 	app.Flags = []cli.Flag{}
 	cs.RegisterProbeFlags(app)
 	s.RegisterWebFlags(app)
-	osdb.RegisterOSDBCLientFlags(app)
+	osdb.RegisterOSDBClientFlags(app)
 	cs.RegisterRedisClientFlags(app)
 	cs.RegisterS3ClientFlags(app)
 	s3.RegisterS3StorageFlags(app)
@@ -40,17 +40,20 @@ func run(c *cli.Context) error {
 	// Setting cachePool
 	cachePool := redis.NewCachePool(redisClient)
 
+	// Setting HTTP Client
+	httpClient := http.DefaultClient
+
 	// Setting OSDB Client
-	client := osdb.NewClient(c)
+	client := osdb.NewClient(c, httpClient)
 
 	// Setting searchPool
-	searchPool := osdb.NewSearchPool(client)
+	searchPool := s.NewSearchPool(client)
 
 	// Setting imdbSearchPool
-	imdbSearchPool := osdb.NewIMDBSearchPool(client)
+	imdbSearchPool := s.NewIMDBSearchPool(client)
 
 	// Setting subsPool
-	subsPool := osdb.NewSubsPool(s3st, client)
+	subsPool := s.NewSubsPool(client, s3st)
 
 	// Setting ProbeService
 	probe := cs.NewProbe(c)
