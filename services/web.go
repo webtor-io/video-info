@@ -111,6 +111,10 @@ func (s *Web) search(sourceURL string, imdbID string, purge bool, cache *redis.C
 	return subs, err
 }
 
+var (
+	re = regexp.MustCompile("(\\d+).([a-z]+)")
+)
+
 func (s *Web) Serve() error {
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
 	ln, err := net.Listen("tcp", addr)
@@ -119,11 +123,11 @@ func (s *Web) Serve() error {
 	}
 	s.ln = ln
 	mux := http.NewServeMux()
-	re, _ := regexp.Compile("(\\d+).([a-z]+)")
 	mux.HandleFunc("/opensubtitles/", func(w http.ResponseWriter, r *http.Request) {
 		values := re.FindStringSubmatch(r.URL.Path)
 		if len(values) == 0 {
 			w.WriteHeader(400)
+			return
 		}
 		sourceURL := s.getSourceURL(r)
 		purge := r.URL.Query().Get("purge") == "true"
