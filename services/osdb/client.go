@@ -41,9 +41,9 @@ func RegisterOSDBClientFlags(c *cli.App) {
 	})
 	c.Flags = append(c.Flags, cli.StringFlag{
 		Name:   OsdbApiUserAgentFlag,
-		Usage:  "osdb user agent",
+		Usage:  "osdb api user agent",
 		Value:  "",
-		EnvVar: "OSDB_USER_AGENT",
+		EnvVar: "OSDB_API_USER_AGENT",
 	})
 	c.Flags = append(c.Flags, cli.StringFlag{
 		Name:   OsdbApiURLFlag,
