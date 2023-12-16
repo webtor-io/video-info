@@ -16,6 +16,7 @@ import (
 type Client struct {
 	apiKey string
 	apiURL string
+	apiUA  string
 	user   string
 	pass   string
 	cl     *http.Client
@@ -24,10 +25,11 @@ type Client struct {
 }
 
 const (
-	OsdbApiKeyFlag = "osdb-api-key"
-	OsdbApiURLFlag = "osdb-api-url"
-	OsdbUser       = "osdb-user"
-	OsdbPass       = "osdb-pass"
+	OsdbApiKeyFlag       = "osdb-api-key"
+	OsdbApiUserAgentFlag = "osdb-api-user-agent"
+	OsdbApiURLFlag       = "osdb-api-url"
+	OsdbUser             = "osdb-user"
+	OsdbPass             = "osdb-pass"
 )
 
 func RegisterOSDBClientFlags(c *cli.App) {
@@ -36,6 +38,12 @@ func RegisterOSDBClientFlags(c *cli.App) {
 		Usage:  "osdb api key",
 		Value:  "",
 		EnvVar: "OSDB_API_KEY",
+	})
+	c.Flags = append(c.Flags, cli.StringFlag{
+		Name:   OsdbApiUserAgentFlag,
+		Usage:  "osdb user agent",
+		Value:  "",
+		EnvVar: "OSDB_USER_AGENT",
 	})
 	c.Flags = append(c.Flags, cli.StringFlag{
 		Name:   OsdbApiURLFlag,
@@ -60,6 +68,7 @@ func RegisterOSDBClientFlags(c *cli.App) {
 func NewClient(c *cli.Context, cl *http.Client) *Client {
 	return &Client{
 		apiKey: c.String(OsdbApiKeyFlag),
+		apiUA:  c.String(OsdbApiUserAgentFlag),
 		apiURL: c.String(OsdbApiURLFlag),
 		user:   c.String(OsdbUser),
 		pass:   c.String(OsdbPass),
@@ -162,6 +171,7 @@ func (s *Client) prepareRequest(req *http.Request) *http.Request {
 	req.Header.Add("Api-Key", s.apiKey)
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Accept", "*/*")
+	req.Header.Add("User-Agent", s.apiUA)
 	return req
 }
 
