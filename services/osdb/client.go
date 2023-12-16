@@ -108,7 +108,7 @@ func (s *Client) getToken(ctx context.Context) (token string, err error) {
 	err = json.Unmarshal(d, &lre)
 
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to unmarshal data=%v", d)
+		return "", errors.Wrapf(err, "failed to unmarshal data=%v", string(d))
 	}
 	go func() {
 		<-time.After(time.Hour)
@@ -139,7 +139,7 @@ func (s *Client) SearchSubtitles(ctx context.Context, u string) (subs []Subtitle
 	sr := SubtitleSearchResponse{}
 	err = json.Unmarshal(data, &sr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to unmarshal data=%v", data)
+		return nil, errors.Wrapf(err, "failed to unmarshal data=%v", string(data))
 	}
 	subs = sr.Data
 	return
