@@ -24,9 +24,9 @@ func NewIMDBSearch(imdbID string, cl *osdb.Client, c *redis.Cache) *IMDBSearch {
 	return &IMDBSearch{imdbID: imdbID, cl: cl, cache: c}
 }
 
-func (s *IMDBSearch) get(purge bool) ([]osdb.Subtitle, error) {
+func (s *IMDBSearch) get(ctx context.Context, purge bool) ([]osdb.Subtitle, error) {
 	if !purge {
-		subtitles, err := s.cache.GetSubtitles()
+		subtitles, err := s.cache.GetSubtitles(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get subtitles from cache")
 		}
@@ -38,14 +38,14 @@ func (s *IMDBSearch) get(purge bool) ([]osdb.Subtitle, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get subtitles")
 	}
-	err = s.cache.SetSubtitles(subtitles)
+	err = s.cache.SetSubtitles(ctx, subtitles)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to store subtitles in cache")
 	}
 	return subtitles, nil
 }
 
-func (s *IMDBSearch) Get(purge bool) ([]osdb.Subtitle, error) {
+func (s *IMDBSearch) Get(ctx context.Context, purge bool) ([]osdb.Subtitle, error) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	if purge {
@@ -54,7 +54,7 @@ func (s *IMDBSearch) Get(purge bool) ([]osdb.Subtitle, error) {
 	if s.inited {
 		return s.value, s.err
 	}
-	s.value, s.err = s.get(purge)
+	s.value, s.err = s.get(ctx, purge)
 	s.inited = true
 	return s.value, s.err
 }

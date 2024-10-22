@@ -37,13 +37,13 @@ func NewSub(sub *osdb.Subtitle, format string, cl *osdb.Client, c *redis.Cache, 
 	}
 }
 
-func (s *Sub) get(purge bool) ([]byte, error) {
+func (s *Sub) get(ctx context.Context, purge bool) ([]byte, error) {
 	if len(s.sub.Attributes.Files) == 0 {
 		return nil, errors.Errorf("no files for subtitle")
 	}
 	id := s.sub.Attributes.Files[0].FileId
 	if !purge {
-		subtitle, err := s.cache.GetSubtitle(id, s.format)
+		subtitle, err := s.cache.GetSubtitle(ctx, id, s.format)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get subtitle from cache")
 		}
@@ -60,12 +60,11 @@ func (s *Sub) get(purge bool) ([]byte, error) {
 			}
 		}
 	}
-	ctx := context.Background()
 	d, err := s.cl.DownloadSubtitle(ctx, id, s.format)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to download subtitle")
 	}
-	err = s.cache.SetSubtitle(id, s.format, d)
+	err = s.cache.SetSubtitle(ctx, id, s.format, d)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to store subtitle in cache")
 	}
@@ -79,7 +78,7 @@ func (s *Sub) get(purge bool) ([]byte, error) {
 	return d, nil
 }
 
-func (s *Sub) Get(purge bool) ([]byte, error) {
+func (s *Sub) Get(ctx context.Context, purge bool) ([]byte, error) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	if purge {
@@ -88,7 +87,7 @@ func (s *Sub) Get(purge bool) ([]byte, error) {
 	if s.inited {
 		return s.value, s.err
 	}
-	s.value, s.err = s.get(purge)
+	s.value, s.err = s.get(ctx, purge)
 	s.inited = true
 	return s.value, s.err
 }

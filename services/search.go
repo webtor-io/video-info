@@ -32,9 +32,9 @@ func NewSearch(url string, hp *HashPool, cl *osdb.Client, c *redis.Cache) *Searc
 	}
 }
 
-func (s *Search) get(purge bool) ([]osdb.Subtitle, error) {
+func (s *Search) get(ctx context.Context, purge bool) ([]osdb.Subtitle, error) {
 	if !purge {
-		subtitles, err := s.cache.GetSubtitles()
+		subtitles, err := s.cache.GetSubtitles(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get subtitles from cache")
 		}
@@ -42,24 +42,23 @@ func (s *Search) get(purge bool) ([]osdb.Subtitle, error) {
 			return subtitles, nil
 		}
 	}
-	hash, _, err := s.hashPool.Get(s.url, s.cache, purge)
+	hash, _, err := s.hashPool.Get(ctx, s.url, s.cache, purge)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get hash")
 	}
 
-	ctx := context.Background()
 	subtitles, err := s.cl.SearchSubtitlesByHash(ctx, fmt.Sprintf("%x", hash))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get subtitles")
 	}
-	err = s.cache.SetSubtitles(subtitles)
+	err = s.cache.SetSubtitles(ctx, subtitles)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to store subtitles in cache")
 	}
 	return subtitles, nil
 }
 
-func (s *Search) Get(purge bool) ([]osdb.Subtitle, error) {
+func (s *Search) Get(ctx context.Context, purge bool) ([]osdb.Subtitle, error) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	if purge {
@@ -68,7 +67,7 @@ func (s *Search) Get(purge bool) ([]osdb.Subtitle, error) {
 	if s.inited {
 		return s.value, s.err
 	}
-	s.value, s.err = s.get(purge)
+	s.value, s.err = s.get(ctx, purge)
 	s.inited = true
 	return s.value, s.err
 }

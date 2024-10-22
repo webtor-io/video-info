@@ -2,12 +2,13 @@ package redis
 
 import (
 	"bytes"
+	"context"
 	"encoding/gob"
+	"github.com/redis/go-redis/v9"
 	"github.com/webtor-io/video-info/services/osdb"
 	"strconv"
 	"time"
 
-	"github.com/go-redis/redis"
 	"github.com/pkg/errors"
 	cs "github.com/webtor-io/common-services"
 )
@@ -26,13 +27,13 @@ func NewCache(key string, cl *cs.RedisClient) *Cache {
 	return &Cache{key: key, cl: cl}
 }
 
-func (s *Cache) GetHashAndSize() (uint64, int64, error) {
+func (s *Cache) GetHashAndSize(ctx context.Context) (uint64, int64, error) {
 	cl := s.cl.Get()
 	// if err != nil {
 	// 	return 0, errors.Wrap(err, "Failed to get redis client")
 	// }
-	data, err := cl.Get(s.key + "hashandsize").Bytes()
-	if err == redis.Nil {
+	data, err := cl.Get(ctx, s.key+"hashandsize").Bytes()
+	if errors.Is(err, redis.Nil) {
 		return 0, 0, nil
 	}
 	res := HashAndSize{}
@@ -40,7 +41,7 @@ func (s *Cache) GetHashAndSize() (uint64, int64, error) {
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "failed to decode data")
 	}
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return 0, 0, nil
 	}
 	if err != nil {
@@ -49,7 +50,7 @@ func (s *Cache) GetHashAndSize() (uint64, int64, error) {
 	return res.Hash, res.Size, nil
 }
 
-func (s *Cache) SetHashAndSize(hash uint64, size int64) error {
+func (s *Cache) SetHashAndSize(ctx context.Context, hash uint64, size int64) error {
 	cl := s.cl.Get()
 	// if err != nil {
 	// 	return errors.Wrap(err, "failed to get redis client")
@@ -58,21 +59,21 @@ func (s *Cache) SetHashAndSize(hash uint64, size int64) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to encode hash and size")
 	}
-	err = cl.Set(s.key+"hashandsize", data, time.Hour*24).Err()
+	err = cl.Set(ctx, s.key+"hashandsize", data, time.Hour*24).Err()
 	if err != nil {
 		return errors.Wrap(err, "Failed to set hash")
 	}
 	return nil
 }
 
-func (s *Cache) GetSubtitles() ([]osdb.Subtitle, error) {
+func (s *Cache) GetSubtitles(ctx context.Context) ([]osdb.Subtitle, error) {
 	//return nil, nil
 	cl := s.cl.Get()
 	//if err != nil {
 	//	return nil, errors.Wrap(err, "failed to get redis client")
 	//}
-	data, err := cl.Get(s.key + "subsrest").Bytes()
-	if err == redis.Nil {
+	data, err := cl.Get(ctx, s.key+"subsrest").Bytes()
+	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
 	if err != nil {
@@ -87,7 +88,7 @@ func (s *Cache) GetSubtitles() ([]osdb.Subtitle, error) {
 	return res, nil
 }
 
-func (s *Cache) SetSubtitles(subs []osdb.Subtitle) error {
+func (s *Cache) SetSubtitles(ctx context.Context, subs []osdb.Subtitle) error {
 	cl := s.cl.Get()
 	// if err != nil {
 	// 	return errors.Wrap(err, "Failed to get redis client")
@@ -96,20 +97,20 @@ func (s *Cache) SetSubtitles(subs []osdb.Subtitle) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to encode subs")
 	}
-	err = cl.Set(s.key+"subsrest", data, time.Hour*24).Err()
+	err = cl.Set(ctx, s.key+"subsrest", data, time.Hour*24).Err()
 	if err != nil {
 		return errors.Wrap(err, "failed to set subs")
 	}
 	return nil
 }
 
-func (s *Cache) GetSubtitle(id int, format string) ([]byte, error) {
+func (s *Cache) GetSubtitle(ctx context.Context, id int, format string) ([]byte, error) {
 	cl := s.cl.Get()
 	// if err != nil {
 	// 	return nil, errors.Wrap(err, "failed to get redis client")
 	// }
-	data, err := cl.Get(s.key + "sub" + strconv.Itoa(id) + format).Bytes()
-	if err == redis.Nil {
+	data, err := cl.Get(ctx, s.key+"sub"+strconv.Itoa(id)+format).Bytes()
+	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
 	if err != nil {
@@ -118,12 +119,12 @@ func (s *Cache) GetSubtitle(id int, format string) ([]byte, error) {
 	return data, nil
 }
 
-func (s *Cache) SetSubtitle(id int, format string, data []byte) error {
+func (s *Cache) SetSubtitle(ctx context.Context, id int, format string, data []byte) error {
 	cl := s.cl.Get()
 	// if err != nil {
 	// 	return errors.Wrap(err, "failed to get redis client")
 	// }
-	err := cl.Set(s.key+"sub"+strconv.Itoa(id)+format, data, time.Hour*24).Err()
+	err := cl.Set(ctx, s.key+"sub"+strconv.Itoa(id)+format, data, time.Hour*24).Err()
 	if err != nil {
 		return errors.Wrap(err, "failed to set subtitle")
 	}

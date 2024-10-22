@@ -32,37 +32,39 @@ const (
 	OsdbPass             = "osdb-pass"
 )
 
-func RegisterOSDBClientFlags(c *cli.App) {
-	c.Flags = append(c.Flags, cli.StringFlag{
-		Name:   OsdbApiKeyFlag,
-		Usage:  "osdb api key",
-		Value:  "",
-		EnvVar: "OSDB_API_KEY",
-	})
-	c.Flags = append(c.Flags, cli.StringFlag{
-		Name:   OsdbApiUserAgentFlag,
-		Usage:  "osdb api user agent",
-		Value:  "",
-		EnvVar: "OSDB_API_USER_AGENT",
-	})
-	c.Flags = append(c.Flags, cli.StringFlag{
-		Name:   OsdbApiURLFlag,
-		Usage:  "osdb api url",
-		Value:  "https://api.opensubtitles.com/api/v1",
-		EnvVar: "OSDB_API_URL",
-	})
-	c.Flags = append(c.Flags, cli.StringFlag{
-		Name:   OsdbUser,
-		Usage:  "osdb user",
-		Value:  "",
-		EnvVar: "OSDB_USER",
-	})
-	c.Flags = append(c.Flags, cli.StringFlag{
-		Name:   OsdbPass,
-		Usage:  "osdb pass",
-		Value:  "",
-		EnvVar: "OSDB_PASS",
-	})
+func RegisterOSDBClientFlags(f []cli.Flag) []cli.Flag {
+	return append(f,
+		cli.StringFlag{
+			Name:   OsdbApiKeyFlag,
+			Usage:  "osdb api key",
+			Value:  "",
+			EnvVar: "OSDB_API_KEY",
+		},
+		cli.StringFlag{
+			Name:   OsdbApiUserAgentFlag,
+			Usage:  "osdb api user agent",
+			Value:  "",
+			EnvVar: "OSDB_API_USER_AGENT",
+		},
+		cli.StringFlag{
+			Name:   OsdbApiURLFlag,
+			Usage:  "osdb api url",
+			Value:  "https://api.opensubtitles.com/api/v1",
+			EnvVar: "OSDB_API_URL",
+		},
+		cli.StringFlag{
+			Name:   OsdbUser,
+			Usage:  "osdb user",
+			Value:  "",
+			EnvVar: "OSDB_USER",
+		},
+		cli.StringFlag{
+			Name:   OsdbPass,
+			Usage:  "osdb pass",
+			Value:  "",
+			EnvVar: "OSDB_PASS",
+		},
+	)
 }
 
 func NewClient(c *cli.Context, cl *http.Client) *Client {

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"github.com/pkg/errors"
 	"github.com/webtor-io/video-info/services/osdb"
 	"strconv"
@@ -34,7 +35,7 @@ func NewSubsPool(cl *osdb.Client, s3 *s3.S3Storage) *SubsPool {
 	}
 }
 
-func (s *SubsPool) Get(sub *osdb.Subtitle, format string, c *redis.Cache, purge bool, logger *logrus.Entry) ([]byte, error) {
+func (s *SubsPool) Get(ctx context.Context, sub *osdb.Subtitle, format string, c *redis.Cache, purge bool, logger *logrus.Entry) ([]byte, error) {
 	if len(sub.Attributes.Files) == 0 {
 		return nil, errors.Errorf("no files for subtitle")
 	}
@@ -58,5 +59,5 @@ func (s *SubsPool) Get(sub *osdb.Subtitle, format string, c *redis.Cache, purge 
 		timer.Reset(s.expire)
 		s.mux.Unlock()
 	}
-	return v.(*Sub).Get(purge)
+	return v.(*Sub).Get(ctx, purge)
 }

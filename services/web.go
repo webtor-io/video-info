@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	iso6391 "github.com/emvi/iso-639-1"
@@ -58,23 +59,25 @@ func NewWeb(c *cli.Context, sp *SearchPool, isp *IMDBSearchPool, sbp *SubsPool, 
 	}
 }
 
-func RegisterWebFlags(c *cli.App) {
-	c.Flags = append(c.Flags, cli.StringFlag{
-		Name:  WebHostFlag,
-		Usage: "listening host",
-		Value: "",
-	})
-	c.Flags = append(c.Flags, cli.StringFlag{
-		Name:   WebSourceURL,
-		Usage:  "source url",
-		Value:  "",
-		EnvVar: "SOURCE_URL",
-	})
-	c.Flags = append(c.Flags, cli.IntFlag{
-		Name:  WebPortFlag,
-		Usage: "http listening port",
-		Value: 8080,
-	})
+func RegisterWebFlags(f []cli.Flag) []cli.Flag {
+	return append(f,
+		cli.StringFlag{
+			Name:  WebHostFlag,
+			Usage: "listening host",
+			Value: "",
+		},
+		cli.StringFlag{
+			Name:   WebSourceURL,
+			Usage:  "source url",
+			Value:  "",
+			EnvVar: "SOURCE_URL",
+		},
+		cli.IntFlag{
+			Name:  WebPortFlag,
+			Usage: "http listening port",
+			Value: 8080,
+		},
+	)
 }
 
 func (s *Web) getSourceURL(r *http.Request) string {
@@ -96,15 +99,15 @@ func getCacheKey(r *http.Request) string {
 	return r.Header.Get("X-Info-Hash") + r.Header.Get("X-Path") + r.URL.Query().Get("imdb-id")
 }
 
-func (s *Web) search(sourceURL string, imdbID string, purge bool, cache *redis.Cache, logger *log.Entry) ([]osdb.Subtitle, error) {
+func (s *Web) search(ctx context.Context, sourceURL string, imdbID string, purge bool, cache *redis.Cache, logger *log.Entry) ([]osdb.Subtitle, error) {
 	var subs []osdb.Subtitle
 	var err error
 	if imdbID != "" {
 		logger.Info("fetching subtitles by IMDB id")
-		subs, err = s.imdbSearchPool.Get(imdbID, cache, purge)
+		subs, err = s.imdbSearchPool.Get(ctx, imdbID, cache, purge)
 	} else if sourceURL != "" {
 		logger.Info("fetching subtitles by hash and file size")
-		subs, err = s.searchPool.Get(sourceURL, cache, purge)
+		subs, err = s.searchPool.Get(ctx, sourceURL, cache, purge)
 	} else {
 		err = errors.Errorf("no data provided to find subtitles")
 	}
@@ -153,7 +156,7 @@ func (s *Web) Serve() error {
 		}
 		logger = logger.WithField("id", id)
 		cache := s.cachePool.Get(getCacheKey(r))
-		subs, err := s.search(sourceURL, imdbID, purge, cache, logger)
+		subs, err := s.search(r.Context(), sourceURL, imdbID, purge, cache, logger)
 		if err != nil {
 			logger.WithError(err).Error("failed to get subtitles")
 			w.WriteHeader(404)
@@ -175,7 +178,7 @@ func (s *Web) Serve() error {
 		logger.Info("fetching subtitle")
 
 		// src := strings.Replace(sub.SubDownloadLink, "download/", "download/subformat-vtt/", 1)
-		su, err := s.subsPool.Get(sub, "webvtt", cache, purge, logger)
+		su, err := s.subsPool.Get(r.Context(), sub, "webvtt", cache, purge, logger)
 		if err != nil {
 			logger.WithError(err).Error("failed to get subtitle")
 			w.WriteHeader(404)
@@ -197,7 +200,7 @@ func (s *Web) Serve() error {
 			"sourceURL": sourceURL,
 			"purge":     purge,
 		})
-		subs, err := s.search(sourceURL, imdbID, purge, s.cachePool.Get(getCacheKey(r)), logger)
+		subs, err := s.search(r.Context(), sourceURL, imdbID, purge, s.cachePool.Get(getCacheKey(r)), logger)
 		if err != nil {
 			logger.WithError(err).Error("failed to get subtitles")
 			w.WriteHeader(404)

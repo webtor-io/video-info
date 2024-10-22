@@ -25,18 +25,20 @@ const (
 	UseS3Flag     = "use-s3"
 )
 
-func RegisterS3StorageFlags(c *cli.App) {
-	c.Flags = append(c.Flags, cli.StringFlag{
-		Name:   AwsBucketFlag,
-		Usage:  "AWS Bucket",
-		Value:  "",
-		EnvVar: "AWS_BUCKET",
-	})
-	c.Flags = append(c.Flags, cli.BoolFlag{
-		Name:   UseS3Flag,
-		Usage:  "Use S3",
-		EnvVar: "USE_S3",
-	})
+func RegisterS3StorageFlags(f []cli.Flag) []cli.Flag {
+	return append(f,
+		cli.StringFlag{
+			Name:   AwsBucketFlag,
+			Usage:  "AWS Bucket",
+			Value:  "",
+			EnvVar: "AWS_BUCKET",
+		},
+		cli.BoolFlag{
+			Name:   UseS3Flag,
+			Usage:  "Use S3",
+			EnvVar: "USE_S3",
+		},
+	)
 }
 
 func NewS3Storage(c *cli.Context, cl *cs.S3Client) *S3Storage {

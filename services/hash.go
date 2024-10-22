@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"net/http"
 	"sync"
@@ -27,9 +28,9 @@ func NewHash(url string, c *redis.Cache) *Hash {
 	return &Hash{url: url, cache: c, inited: false}
 }
 
-func (s *Hash) get(purge bool) (uint64, int64, error) {
+func (s *Hash) get(ctx context.Context, purge bool) (uint64, int64, error) {
 	if !purge {
-		hash, size, err := s.cache.GetHashAndSize()
+		hash, size, err := s.cache.GetHashAndSize(ctx)
 		if err != nil {
 			return 0, 0, errors.Wrap(err, "failed to get hash and size from cache")
 		}
@@ -51,14 +52,14 @@ func (s *Hash) get(purge bool) (uint64, int64, error) {
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "failed to get hash")
 	}
-	err = s.cache.SetHashAndSize(hash, size)
+	err = s.cache.SetHashAndSize(ctx, hash, size)
 	if err != nil {
 		return 0, 0, errors.Wrap(err, "failed to store hash in cache")
 	}
 	return hash, size, nil
 }
 
-func (s *Hash) Get(purge bool) (uint64, int64, error) {
+func (s *Hash) Get(ctx context.Context, purge bool) (uint64, int64, error) {
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	if purge {
@@ -67,7 +68,7 @@ func (s *Hash) Get(purge bool) (uint64, int64, error) {
 	if s.inited {
 		return s.hash, s.size, s.err
 	}
-	s.hash, s.size, s.err = s.get(purge)
+	s.hash, s.size, s.err = s.get(ctx, purge)
 	s.inited = true
 	return s.hash, s.size, s.err
 }

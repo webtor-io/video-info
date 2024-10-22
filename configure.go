@@ -15,12 +15,12 @@ import (
 
 func configure(app *cli.App) {
 	app.Flags = []cli.Flag{}
-	cs.RegisterProbeFlags(app)
-	s.RegisterWebFlags(app)
-	osdb.RegisterOSDBClientFlags(app)
-	cs.RegisterRedisClientFlags(app)
-	cs.RegisterS3ClientFlags(app)
-	s3.RegisterS3StorageFlags(app)
+	app.Flags = cs.RegisterProbeFlags(app.Flags)
+	app.Flags = s.RegisterWebFlags(app.Flags)
+	app.Flags = osdb.RegisterOSDBClientFlags(app.Flags)
+	app.Flags = cs.RegisterRedisClientFlags(app.Flags)
+	app.Flags = cs.RegisterS3ClientFlags(app.Flags)
+	app.Flags = s3.RegisterS3StorageFlags(app.Flags)
 
 	app.Action = run
 }
