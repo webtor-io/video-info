@@ -122,48 +122,52 @@ func parseSearchQuery(r *http.Request) SearchQuery {
 	return SearchQuery{ImdbID: q.Get("imdb-id"), Season: season, Episode: episode}
 }
 
-func cacheKey(infoHash, path string, q SearchQuery) string {
-	return infoHash + path + q.Key()
+// hashCacheKey is the key of the hash leg: exactly infoHash+path, so the
+// moviehash/size entry and the hash search results stay shared across every
+// request for the same file, whatever hints the query carries.
+func hashCacheKey(infoHash, path string) string {
+	return infoHash + path
 }
 
-func getCacheKey(r *http.Request) string {
-	return cacheKey(r.Header.Get("X-Info-Hash"), r.Header.Get("X-Path"), parseSearchQuery(r))
+// imdbCacheKey is the key of the IMDb leg: the same file plus the query, since
+// results differ per title/season/episode.
+func imdbCacheKey(infoHash, path string, q SearchQuery) string {
+	return infoHash + path + ":imdb:" + q.Key()
 }
 
-func sourceOf(subs []osdb.Subtitle) string {
-	for _, s := range subs {
-		if s.Attributes.MoviehashMatch {
-			return "hash"
-		}
-	}
-	return "imdb"
-}
+// perLangCap is how many tracks per language a listing keeps.
+const perLangCap = 3
 
-func (s *Web) search(ctx context.Context, sourceURL string, q SearchQuery, purge bool, cache *redis.Cache, logger *log.Entry) ([]osdb.Subtitle, string, error) {
-	if sourceURL == "" && q.ImdbID == "" {
+// search runs the hash leg first and falls back to the IMDb leg. The two legs
+// get their own cache: the hash leg keys on the file alone (so its moviehash
+// and its results are not fragmented by imdb-id/season/episode hints), the
+// IMDb leg keys on file+query. The returned source names the leg that produced
+// the list, never a property of the tracks in it.
+func (s *Web) search(ctx context.Context, sourceURL string, q SearchQuery, purge bool, hashCache, imdbCache *redis.Cache, logger *log.Entry) ([]osdb.Subtitle, string, error) {
+	if sourceURL == "" && !q.Valid() {
 		return nil, "", errors.Errorf("no data provided to find subtitles")
 	}
 	var subs []osdb.Subtitle
 	var err error
 	if sourceURL != "" {
 		logger.Info("fetching subtitles by hash and file size")
-		subs, err = s.searcher.ByHash(ctx, sourceURL, cache, purge)
+		subs, err = s.searcher.ByHash(ctx, sourceURL, hashCache, purge)
 		if err != nil {
 			logger.WithError(err).Warn("hash search failed")
 		}
-		if len(subs) > 0 {
-			return RankSubtitles(subs, 3), sourceOf(subs), nil
+		if ranked := RankSubtitles(subs, perLangCap); len(ranked) > 0 {
+			return ranked, "hash", nil
 		}
 	}
-	if q.ImdbID == "" {
+	if !q.Valid() {
 		return nil, "", err
 	}
 	logger.WithField("episode", q.IsEpisode()).Info("fetching subtitles by IMDB id")
-	subs, err = s.searcher.ByIMDB(ctx, q, cache, purge)
+	subs, err = s.searcher.ByIMDB(ctx, q, imdbCache, purge)
 	if err != nil {
 		return nil, "", err
 	}
-	return RankSubtitles(subs, 3), "imdb", nil
+	return RankSubtitles(subs, perLangCap), "imdb", nil
 }
 
 var (
@@ -209,8 +213,9 @@ func (s *Web) Serve() error {
 			return
 		}
 		logger = logger.WithField("id", id)
-		cache := s.cachePool.Get(getCacheKey(r))
-		subs, _, err := s.search(r.Context(), sourceURL, q, purge, cache, logger)
+		cache := s.cachePool.Get(hashCacheKey(getInfoHash(r), getPath(r)))
+		imdbCache := s.cachePool.Get(imdbCacheKey(getInfoHash(r), getPath(r), q))
+		subs, _, err := s.search(r.Context(), sourceURL, q, purge, cache, imdbCache, logger)
 		if err != nil {
 			logger.WithError(err).Error("failed to get subtitles")
 			w.WriteHeader(404)
@@ -256,7 +261,9 @@ func (s *Web) Serve() error {
 			"sourceURL": sourceURL,
 			"purge":     purge,
 		})
-		subs, source, err := s.search(r.Context(), sourceURL, q, purge, s.cachePool.Get(getCacheKey(r)), logger)
+		hashCache := s.cachePool.Get(hashCacheKey(getInfoHash(r), getPath(r)))
+		imdbCache := s.cachePool.Get(imdbCacheKey(getInfoHash(r), getPath(r), q))
+		subs, source, err := s.search(r.Context(), sourceURL, q, purge, hashCache, imdbCache, logger)
 		if err != nil {
 			logger.WithError(err).Error("failed to get subtitles")
 			w.WriteHeader(404)

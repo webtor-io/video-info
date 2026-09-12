@@ -19,6 +19,13 @@ type SearchQuery struct {
 
 func (q SearchQuery) IsEpisode() bool { return q.Season > 0 && q.Episode > 0 }
 
+// Valid reports whether the IMDb id is usable as an upstream filter. An id that
+// is not valid must never reach the client or the pool key.
+func (q SearchQuery) Valid() bool {
+	_, ok := osdb.ValidImdbID(q.ImdbID)
+	return ok
+}
+
 func (q SearchQuery) Key() string {
 	return fmt.Sprintf("%s:%d:%d", osdb.NormalizeImdbID(q.ImdbID), q.Season, q.Episode)
 }

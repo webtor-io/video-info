@@ -159,11 +159,28 @@ func (s *Client) SearchSubtitles(ctx context.Context, u string) (subs []Subtitle
 	return
 }
 
-// NormalizeImdbID strips the "tt" prefix and leading zeros: the
-// OpenSubtitles API wants the bare number.
+// NormalizeImdbID strips the "tt" prefix and leading zeros, because the
+// OpenSubtitles API wants the bare number. It does not validate: see
+// ValidImdbID.
 func NormalizeImdbID(id string) string {
 	id = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(id)), "tt")
 	return strings.TrimLeft(id, "0")
+}
+
+// ValidImdbID returns the normalized id and true only when it is non-empty and
+// all ASCII digits, so it can be spliced into an upstream query and used as a
+// cache/pool key without smuggling anything along.
+func ValidImdbID(id string) (string, bool) {
+	n := NormalizeImdbID(id)
+	if n == "" {
+		return "", false
+	}
+	for _, c := range n {
+		if c < '0' || c > '9' {
+			return "", false
+		}
+	}
+	return n, true
 }
 
 func (s *Client) SearchSubtitlesByIMDB(ctx context.Context, id string) (subs []Subtitle, err error) {
