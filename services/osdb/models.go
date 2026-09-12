@@ -61,6 +61,7 @@ type Subtitle struct {
 		ForeignPartsOnly  bool      `json:"foreign_parts_only"`
 		AiTranslated      bool      `json:"ai_translated"`
 		MachineTranslated bool      `json:"machine_translated"`
+		MoviehashMatch    bool      `json:"moviehash_match"`
 		UploadDate        time.Time `json:"upload_date"`
 		Release           string    `json:"release"`
 		Comments          string    `json:"comments"`
