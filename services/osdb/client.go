@@ -184,17 +184,26 @@ func ValidImdbID(id string) (string, bool) {
 }
 
 func (s *Client) SearchSubtitlesByIMDB(ctx context.Context, id string) (subs []Subtitle, err error) {
-	u := fmt.Sprintf("%v/subtitles?imdb_id=%v", s.apiURL, NormalizeImdbID(id))
-	return s.SearchSubtitles(ctx, u)
+	n, ok := ValidImdbID(id)
+	if !ok {
+		return nil, errors.Errorf("invalid imdb id %q", id)
+	}
+	q := url.Values{}
+	q.Set("imdb_id", n)
+	return s.SearchSubtitles(ctx, s.apiURL+"/subtitles?"+q.Encode())
 }
 
 // SearchSubtitlesByEpisode looks up one episode of a series by the
 // series' IMDb id. Query keys are alphabetical so tests can match the
 // exact URL.
 func (s *Client) SearchSubtitlesByEpisode(ctx context.Context, parentImdbID string, season, episode int) (subs []Subtitle, err error) {
+	n, ok := ValidImdbID(parentImdbID)
+	if !ok {
+		return nil, errors.Errorf("invalid imdb id %q", parentImdbID)
+	}
 	q := url.Values{}
 	q.Set("episode_number", strconv.Itoa(episode))
-	q.Set("parent_imdb_id", NormalizeImdbID(parentImdbID))
+	q.Set("parent_imdb_id", n)
 	q.Set("season_number", strconv.Itoa(season))
 	return s.SearchSubtitles(ctx, s.apiURL+"/subtitles?"+q.Encode())
 }

@@ -61,3 +61,52 @@ func TestMoviehashMatchDecoded(t *testing.T) {
 		t.Fatalf("subs=%+v err=%v", subs, err)
 	}
 }
+
+func TestValidImdbID(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"tt0109424", "109424", true},
+		{"TT0000123", "123", true},
+		{"109424", "109424", true},
+		{" tt0109424 ", "109424", true},
+		{"", "", false},
+		{"tt", "", false},
+		{"000", "", false},
+		{"1&languages=xx", "", false},
+		{"12a", "", false},
+		{"tt12 34", "", false},
+	}
+	for _, c := range cases {
+		got, ok := ValidImdbID(c.in)
+		if got != c.want || ok != c.ok {
+			t.Errorf("ValidImdbID(%q)=(%q,%v) want (%q,%v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestSearchSubtitlesByIMDBRejectsMalformed(t *testing.T) {
+	for _, id := range []string{"", "tt", "000", "1&languages=xx"} {
+		c, seen := newTestClient(t, okEmpty)
+		if _, err := c.SearchSubtitlesByIMDB(context.Background(), id); err == nil {
+			t.Errorf("SearchSubtitlesByIMDB(%q): want error", id)
+		}
+		if len(*seen) != 0 {
+			t.Errorf("SearchSubtitlesByIMDB(%q): made requests %v", id, *seen)
+		}
+	}
+}
+
+func TestSearchSubtitlesByEpisodeRejectsMalformed(t *testing.T) {
+	for _, id := range []string{"", "tt", "1&languages=xx"} {
+		c, seen := newTestClient(t, okEmpty)
+		if _, err := c.SearchSubtitlesByEpisode(context.Background(), id, 1, 2); err == nil {
+			t.Errorf("SearchSubtitlesByEpisode(%q): want error", id)
+		}
+		if len(*seen) != 0 {
+			t.Errorf("SearchSubtitlesByEpisode(%q): made requests %v", id, *seen)
+		}
+	}
+}

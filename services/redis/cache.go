@@ -27,6 +27,12 @@ func NewCache(key string, cl *cs.RedisClient) *Cache {
 	return &Cache{key: key, cl: cl}
 }
 
+// Key is the prefix every entry of this cache lives under. Callers that key
+// their own in-process maps by the same thing read it from here.
+func (s *Cache) Key() string {
+	return s.key
+}
+
 func (s *Cache) GetHashAndSize(ctx context.Context) (uint64, int64, error) {
 	cl := s.cl.Get()
 	// if err != nil {

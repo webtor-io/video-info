@@ -34,7 +34,7 @@ func (p poolSearcher) ByHash(ctx context.Context, u string, c *redis.Cache, purg
 	return p.hash.Get(ctx, u, c, purge)
 }
 func (p poolSearcher) ByIMDB(ctx context.Context, q SearchQuery, c *redis.Cache, purge bool) ([]osdb.Subtitle, error) {
-	return p.imdb.Get(ctx, q, c, purge)
+	return p.imdb.Get(ctx, c.Key(), q, c, purge)
 }
 
 type Web struct {

@@ -33,7 +33,12 @@ func (f *fakeSearcher) ByIMDB(_ context.Context, q SearchQuery, c *redis.Cache, 
 	return f.imdb, f.imdbErr
 }
 
-func one(id string) osdb.Subtitle { var s osdb.Subtitle; s.Id = id; s.Attributes.Language = "en"; return s }
+func one(id string) osdb.Subtitle {
+	var s osdb.Subtitle
+	s.Id = id
+	s.Attributes.Language = "en"
+	return s
+}
 
 // hashOne mirrors what OpenSubtitles actually returns for a hash search: moviehash_match
 // is only ever populated (true) when the query included a moviehash.
@@ -173,5 +178,19 @@ func TestHashCacheKeyIgnoresHints(t *testing.T) {
 	}
 	if hashCacheKey("hash", "/p") == imdbCacheKey("hash", "/p", SearchQuery{ImdbID: "tt1"}) {
 		t.Fatal("hash and imdb keys must differ")
+	}
+}
+
+// A malformed imdb-id must never reach the client: it would be spliced into
+// the upstream query and collide as a pool key.
+func TestSearchIgnoresInvalidImdbID(t *testing.T) {
+	f := &fakeSearcher{imdb: []osdb.Subtitle{one("i")}}
+	w := &Web{searcher: f}
+	subs, src, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "1&x=y"}, false, nil, nil, testLogger())
+	if err != nil || src != "" || len(subs) != 0 {
+		t.Fatalf("subs=%v src=%q err=%v", subs, src, err)
+	}
+	if !callsEqual(f.calls, []string{"hash"}) {
+		t.Fatalf("imdb leg must not run for an invalid id: %v", f.calls)
 	}
 }
