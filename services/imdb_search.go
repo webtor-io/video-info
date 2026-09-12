@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"github.com/webtor-io/video-info/services/osdb"
 	"sync"
 
@@ -10,8 +11,20 @@ import (
 	"github.com/pkg/errors"
 )
 
+type SearchQuery struct {
+	ImdbID  string
+	Season  int
+	Episode int
+}
+
+func (q SearchQuery) IsEpisode() bool { return q.Season > 0 && q.Episode > 0 }
+
+func (q SearchQuery) Key() string {
+	return fmt.Sprintf("%s:%d:%d", osdb.NormalizeImdbID(q.ImdbID), q.Season, q.Episode)
+}
+
 type IMDBSearch struct {
-	imdbID string
+	q      SearchQuery
 	cache  *redis.Cache
 	value  []osdb.Subtitle
 	inited bool
@@ -20,8 +33,8 @@ type IMDBSearch struct {
 	cl     *osdb.Client
 }
 
-func NewIMDBSearch(imdbID string, cl *osdb.Client, c *redis.Cache) *IMDBSearch {
-	return &IMDBSearch{imdbID: imdbID, cl: cl, cache: c}
+func NewIMDBSearch(q SearchQuery, cl *osdb.Client, c *redis.Cache) *IMDBSearch {
+	return &IMDBSearch{q: q, cl: cl, cache: c}
 }
 
 func (s *IMDBSearch) get(ctx context.Context, purge bool) ([]osdb.Subtitle, error) {
@@ -34,7 +47,13 @@ func (s *IMDBSearch) get(ctx context.Context, purge bool) ([]osdb.Subtitle, erro
 			return subtitles, nil
 		}
 	}
-	subtitles, err := s.cl.SearchSubtitlesByIMDB(context.Background(), s.imdbID)
+	var subtitles []osdb.Subtitle
+	var err error
+	if s.q.IsEpisode() {
+		subtitles, err = s.cl.SearchSubtitlesByEpisode(ctx, s.q.ImdbID, s.q.Season, s.q.Episode)
+	} else {
+		subtitles, err = s.cl.SearchSubtitlesByIMDB(ctx, s.q.ImdbID)
+	}
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get subtitles")
 	}

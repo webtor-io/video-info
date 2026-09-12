@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"github.com/webtor-io/video-info/services/osdb"
-	"strings"
 	"sync"
 
 	"github.com/webtor-io/video-info/services/redis"
@@ -19,11 +18,10 @@ func NewIMDBSearchPool(cl *osdb.Client) *IMDBSearchPool {
 	return &IMDBSearchPool{cl: cl}
 }
 
-func (s *IMDBSearchPool) Get(ctx context.Context, imdbID string, c *redis.Cache, purge bool) ([]osdb.Subtitle, error) {
-	imdbID = strings.TrimPrefix(strings.TrimPrefix(strings.ToLower(imdbID), "tt"), "0")
-	v, loaded := s.sm.LoadOrStore(imdbID, NewIMDBSearch(imdbID, s.cl, c))
+func (s *IMDBSearchPool) Get(ctx context.Context, q SearchQuery, c *redis.Cache, purge bool) ([]osdb.Subtitle, error) {
+	v, loaded := s.sm.LoadOrStore(q.Key(), NewIMDBSearch(q, s.cl, c))
 	if !loaded {
-		defer s.sm.Delete(imdbID)
+		defer s.sm.Delete(q.Key())
 	}
 	return v.(*IMDBSearch).Get(ctx, purge)
 }

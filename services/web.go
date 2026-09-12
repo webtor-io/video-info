@@ -20,15 +20,31 @@ import (
 	logrusmiddleware "github.com/bakins/logrus-middleware"
 )
 
+type subtitleSearcher interface {
+	ByHash(ctx context.Context, sourceURL string, cache *redis.Cache, purge bool) ([]osdb.Subtitle, error)
+	ByIMDB(ctx context.Context, q SearchQuery, cache *redis.Cache, purge bool) ([]osdb.Subtitle, error)
+}
+
+type poolSearcher struct {
+	hash *SearchPool
+	imdb *IMDBSearchPool
+}
+
+func (p poolSearcher) ByHash(ctx context.Context, u string, c *redis.Cache, purge bool) ([]osdb.Subtitle, error) {
+	return p.hash.Get(ctx, u, c, purge)
+}
+func (p poolSearcher) ByIMDB(ctx context.Context, q SearchQuery, c *redis.Cache, purge bool) ([]osdb.Subtitle, error) {
+	return p.imdb.Get(ctx, q, c, purge)
+}
+
 type Web struct {
-	host           string
-	port           int
-	ln             net.Listener
-	searchPool     *SearchPool
-	imdbSearchPool *IMDBSearchPool
-	subsPool       *SubsPool
-	cachePool      *redis.CachePool
-	sourceURL      string
+	host      string
+	port      int
+	ln        net.Listener
+	searcher  subtitleSearcher
+	subsPool  *SubsPool
+	cachePool *redis.CachePool
+	sourceURL string
 }
 
 const (
@@ -38,24 +54,28 @@ const (
 )
 
 type Subtitle struct {
-	SrcLang string `json:"srclang"`
-	Label   string `json:"label"`
-	Src     string `json:"src"`
-	Format  string `json:"format"`
-	ID      string `json:"id"`
+	SrcLang   string  `json:"srclang"`
+	Label     string  `json:"label"`
+	Src       string  `json:"src"`
+	Format    string  `json:"format"`
+	ID        string  `json:"id"`
+	Source    string  `json:"source"`
+	Release   string  `json:"release,omitempty"`
+	Fps       float64 `json:"fps,omitempty"`
+	HI        bool    `json:"hi,omitempty"`
+	Downloads int     `json:"downloads,omitempty"`
 }
 
 type Subtitles []Subtitle
 
 func NewWeb(c *cli.Context, sp *SearchPool, isp *IMDBSearchPool, sbp *SubsPool, cp *redis.CachePool) *Web {
 	return &Web{
-		sourceURL:      c.String(WebSourceURL),
-		host:           c.String(WebHostFlag),
-		port:           c.Int(WebPortFlag),
-		searchPool:     sp,
-		imdbSearchPool: isp,
-		subsPool:       sbp,
-		cachePool:      cp,
+		sourceURL: c.String(WebSourceURL),
+		host:      c.String(WebHostFlag),
+		port:      c.Int(WebPortFlag),
+		searcher:  poolSearcher{hash: sp, imdb: isp},
+		subsPool:  sbp,
+		cachePool: cp,
 	}
 }
 
@@ -95,23 +115,55 @@ func getPath(r *http.Request) string {
 	return r.Header.Get("X-Path")
 }
 
-func getCacheKey(r *http.Request) string {
-	return r.Header.Get("X-Info-Hash") + r.Header.Get("X-Path") + r.URL.Query().Get("imdb-id")
+func parseSearchQuery(r *http.Request) SearchQuery {
+	q := r.URL.Query()
+	season, _ := strconv.Atoi(q.Get("season"))
+	episode, _ := strconv.Atoi(q.Get("episode"))
+	return SearchQuery{ImdbID: q.Get("imdb-id"), Season: season, Episode: episode}
 }
 
-func (s *Web) search(ctx context.Context, sourceURL string, imdbID string, purge bool, cache *redis.Cache, logger *log.Entry) ([]osdb.Subtitle, error) {
+func cacheKey(infoHash, path string, q SearchQuery) string {
+	return infoHash + path + q.Key()
+}
+
+func getCacheKey(r *http.Request) string {
+	return cacheKey(r.Header.Get("X-Info-Hash"), r.Header.Get("X-Path"), parseSearchQuery(r))
+}
+
+func sourceOf(subs []osdb.Subtitle) string {
+	for _, s := range subs {
+		if s.Attributes.MoviehashMatch {
+			return "hash"
+		}
+	}
+	return "imdb"
+}
+
+func (s *Web) search(ctx context.Context, sourceURL string, q SearchQuery, purge bool, cache *redis.Cache, logger *log.Entry) ([]osdb.Subtitle, string, error) {
+	if sourceURL == "" && q.ImdbID == "" {
+		return nil, "", errors.Errorf("no data provided to find subtitles")
+	}
 	var subs []osdb.Subtitle
 	var err error
-	if imdbID != "" {
-		logger.Info("fetching subtitles by IMDB id")
-		subs, err = s.imdbSearchPool.Get(ctx, imdbID, cache, purge)
-	} else if sourceURL != "" {
+	if sourceURL != "" {
 		logger.Info("fetching subtitles by hash and file size")
-		subs, err = s.searchPool.Get(ctx, sourceURL, cache, purge)
-	} else {
-		err = errors.Errorf("no data provided to find subtitles")
+		subs, err = s.searcher.ByHash(ctx, sourceURL, cache, purge)
+		if err != nil {
+			logger.WithError(err).Warn("hash search failed")
+		}
+		if len(subs) > 0 {
+			return RankSubtitles(subs, 3), sourceOf(subs), nil
+		}
 	}
-	return subs, err
+	if q.ImdbID == "" {
+		return nil, "", err
+	}
+	logger.WithField("episode", q.IsEpisode()).Info("fetching subtitles by IMDB id")
+	subs, err = s.searcher.ByIMDB(ctx, q, cache, purge)
+	if err != nil {
+		return nil, "", err
+	}
+	return RankSubtitles(subs, 3), "imdb", nil
 }
 
 var (
@@ -134,10 +186,12 @@ func (s *Web) Serve() error {
 		}
 		sourceURL := s.getSourceURL(r)
 		purge := r.URL.Query().Get("purge") == "true"
-		imdbID := r.URL.Query().Get("imdb-id")
+		q := parseSearchQuery(r)
 
 		logger := log.WithFields(log.Fields{
-			"imdbID":    imdbID,
+			"imdbID":    q.ImdbID,
+			"season":    q.Season,
+			"episode":   q.Episode,
 			"sourceURL": sourceURL,
 			"infoHash":  getInfoHash(r),
 			"path":      getPath(r),
@@ -156,7 +210,7 @@ func (s *Web) Serve() error {
 		}
 		logger = logger.WithField("id", id)
 		cache := s.cachePool.Get(getCacheKey(r))
-		subs, err := s.search(r.Context(), sourceURL, imdbID, purge, cache, logger)
+		subs, _, err := s.search(r.Context(), sourceURL, q, purge, cache, logger)
 		if err != nil {
 			logger.WithError(err).Error("failed to get subtitles")
 			w.WriteHeader(404)
@@ -191,16 +245,18 @@ func (s *Web) Serve() error {
 	})
 	mux.HandleFunc("/subtitles.json", func(w http.ResponseWriter, r *http.Request) {
 		purge := r.URL.Query().Get("purge") == "true"
-		imdbID := r.URL.Query().Get("imdb-id")
+		q := parseSearchQuery(r)
 		sourceURL := s.getSourceURL(r)
 		logger := log.WithFields(log.Fields{
-			"imdbID":    imdbID,
+			"imdbID":    q.ImdbID,
+			"season":    q.Season,
+			"episode":   q.Episode,
 			"infoHash":  getInfoHash(r),
 			"path":      getPath(r),
 			"sourceURL": sourceURL,
 			"purge":     purge,
 		})
-		subs, err := s.search(r.Context(), sourceURL, imdbID, purge, s.cachePool.Get(getCacheKey(r)), logger)
+		subs, source, err := s.search(r.Context(), sourceURL, q, purge, s.cachePool.Get(getCacheKey(r)), logger)
 		if err != nil {
 			logger.WithError(err).Error("failed to get subtitles")
 			w.WriteHeader(404)
@@ -213,11 +269,16 @@ func (s *Web) Serve() error {
 				label = s.Attributes.Language
 			}
 			res = append(res, Subtitle{
-				SrcLang: s.Attributes.Language,
-				Label:   label,
-				Src:     fmt.Sprintf("/opensubtitles/%v.%v", s.Id, "vtt"),
-				Format:  "vtt",
-				ID:      s.Id,
+				SrcLang:   s.Attributes.Language,
+				Label:     label,
+				Src:       fmt.Sprintf("/opensubtitles/%v.%v", s.Id, "vtt"),
+				Format:    "vtt",
+				ID:        s.Id,
+				Source:    source,
+				Release:   s.Attributes.Release,
+				Fps:       s.Attributes.Fps,
+				HI:        s.Attributes.HearingImpaired,
+				Downloads: s.Attributes.DownloadCount,
 			})
 		}
 		logger.WithField("subtitles", res).Infof("got subtitles")
