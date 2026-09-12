@@ -53,3 +53,56 @@ func TestRankSubtitlesEmpty(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestRankSubtitlesPerLangCases(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      []osdb.Subtitle
+		perLang int
+		want    []string
+	}{
+		{
+			name: "perLang 0 disables the cap",
+			in: []osdb.Subtitle{
+				sub("en-1", "en", 30, false, false, false, false),
+				sub("en-2", "en", 20, false, false, false, false),
+				sub("en-3", "en", 10, false, false, false, false),
+				sub("en-4", "en", 5, false, false, false, false),
+			},
+			perLang: 0,
+			want:    []string{"en-1", "en-2", "en-3", "en-4"},
+		},
+		{
+			name: "negative perLang disables the cap",
+			in: []osdb.Subtitle{
+				sub("en-1", "en", 30, false, false, false, false),
+				sub("en-2", "en", 20, false, false, false, false),
+			},
+			perLang: -1,
+			want:    []string{"en-1", "en-2"},
+		},
+		{
+			name: "a language whose every candidate is filtered is absent",
+			in: []osdb.Subtitle{
+				sub("en-ok", "en", 1, false, false, false, false),
+				sub("de-forced", "de", 900, false, false, true, false),
+				sub("de-ai", "de", 800, false, false, false, true),
+			},
+			perLang: 3,
+			want:    []string{"en-ok"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ids(RankSubtitles(c.in, c.perLang))
+			if len(got) != len(c.want) {
+				t.Fatalf("got %v want %v", got, c.want)
+			}
+			for i := range c.want {
+				if got[i] != c.want[i] {
+					t.Fatalf("got %v want %v", got, c.want)
+				}
+			}
+		})
+	}
+}

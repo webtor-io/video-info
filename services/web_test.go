@@ -2,7 +2,13 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
 	log "github.com/sirupsen/logrus"
@@ -60,15 +66,17 @@ func callsEqual(got, want []string) bool {
 	return true
 }
 
-func testLogger() *log.Entry {
-	l := log.New()
-	l.SetOutput(discard{})
-	return log.NewEntry(l)
+// The handlers log through the package-level logrus logger; keep test output clean.
+func TestMain(m *testing.M) {
+	log.SetOutput(io.Discard)
+	os.Exit(m.Run())
 }
 
-type discard struct{}
-
-func (discard) Write(p []byte) (int, error) { return len(p), nil }
+func testLogger() *log.Entry {
+	l := log.New()
+	l.SetOutput(io.Discard)
+	return log.NewEntry(l)
+}
 
 func TestSearchHashWins(t *testing.T) {
 	f := &fakeSearcher{hash: []osdb.Subtitle{hashOne("h")}, imdb: []osdb.Subtitle{one("i")}}
@@ -192,5 +200,110 @@ func TestSearchIgnoresInvalidImdbID(t *testing.T) {
 	}
 	if !callsEqual(f.calls, []string{"hash"}) {
 		t.Fatalf("imdb leg must not run for an invalid id: %v", f.calls)
+	}
+}
+
+func TestRedactURLDropsQuery(t *testing.T) {
+	cases := map[string]string{
+		"http://seeder/f.mkv?token=secret.jwt.value&x=1": "http://seeder/f.mkv",
+		"http://seeder/f.mkv":                            "http://seeder/f.mkv",
+		"":                                               "",
+		"://nope":                                        "",
+	}
+	for in, want := range cases {
+		if got := redactURL(in); got != want {
+			t.Errorf("redactURL(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestParseSearchQueryHalfPair(t *testing.T) {
+	cases := map[string][2]int{
+		"?imdb-id=tt1&season=2":           {0, 0},
+		"?imdb-id=tt1&episode=5":          {0, 0},
+		"?imdb-id=tt1&season=0&episode=5": {0, 0},
+		"?imdb-id=tt1&season=2&episode=5": {2, 5},
+		"?imdb-id=tt1":                    {0, 0},
+		"?imdb-id=tt1&season=x&episode=5": {0, 0},
+	}
+	for qs, want := range cases {
+		q := parseSearchQuery(httptest.NewRequest("GET", "/subtitles.json"+qs, nil))
+		if q.Season != want[0] || q.Episode != want[1] {
+			t.Errorf("%s: season=%d episode=%d want %d/%d", qs, q.Season, q.Episode, want[0], want[1])
+		}
+	}
+}
+
+func rich(id string) osdb.Subtitle {
+	s := hashOne(id)
+	s.Attributes.Release = "GROUP.1080p"
+	s.Attributes.Fps = 23.976
+	s.Attributes.HearingImpaired = true
+	s.Attributes.DownloadCount = 5
+	return s
+}
+
+func TestSubtitlesJSONContract(t *testing.T) {
+	f := &fakeSearcher{hash: []osdb.Subtitle{rich("1"), hashOne("2")}}
+	w := &Web{searcher: f, cachePool: redis.NewCachePool(nil)}
+
+	r := httptest.NewRequest("GET", "/subtitles.json", nil)
+	r.Header.Set("X-Source-Url", "http://seeder/f.mkv?token=secret")
+	r.Header.Set("X-Info-Hash", "abc")
+	r.Header.Set("X-Path", "/f.mkv")
+	rr := httptest.NewRecorder()
+	w.handleSubtitlesJSON(rr, r)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d", rr.Code)
+	}
+	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content-type=%q", ct)
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &items); err != nil {
+		t.Fatalf("body=%q err=%v", rr.Body.String(), err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items=%v", items)
+	}
+	for _, it := range items {
+		for _, k := range []string{"srclang", "label", "src", "format", "id", "source"} {
+			if _, ok := it[k]; !ok {
+				t.Fatalf("missing %q in %v", k, it)
+			}
+		}
+		if it["source"] != "hash" {
+			t.Fatalf("source=%v want hash", it["source"])
+		}
+		if want := "/opensubtitles/" + it["id"].(string) + ".vtt"; it["src"] != want {
+			t.Fatalf("src=%v want %v", it["src"], want)
+		}
+		if it["srclang"] != "en" || it["label"] != "English" {
+			t.Fatalf("lang fields %v", it)
+		}
+	}
+	// Optional fields are present when set...
+	first := items[0]
+	if first["id"] != "1" || first["release"] != "GROUP.1080p" || first["fps"] != 23.976 ||
+		first["hi"] != true || first["downloads"] != float64(5) {
+		t.Fatalf("optional fields not carried: %v", first)
+	}
+	// ...and omitted when zero.
+	for _, k := range []string{"release", "fps", "hi", "downloads"} {
+		if _, ok := items[1][k]; ok {
+			t.Fatalf("zero %q must be omitted: %v", k, items[1])
+		}
+	}
+}
+
+func TestSubtitlesJSONEmptyEncodesAsArray(t *testing.T) {
+	w := &Web{searcher: &fakeSearcher{}, cachePool: redis.NewCachePool(nil)}
+	r := httptest.NewRequest("GET", "/subtitles.json", nil)
+	r.Header.Set("X-Source-Url", "http://seeder/f.mkv")
+	rr := httptest.NewRecorder()
+	w.handleSubtitlesJSON(rr, r)
+	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "[]" {
+		t.Fatalf("status=%d body=%q", rr.Code, rr.Body.String())
 	}
 }

@@ -9,8 +9,9 @@ import (
 // RankSubtitles drops tracks that are useless as a full-dialogue
 // source (forced-only, machine/AI translated), orders the rest so a
 // hash-matched (already in sync) track wins, then trusted uploaders,
-// then popularity, and keeps at most perLang per language. Languages
-// keep their first-seen order so the caller's listing stays stable.
+// then popularity, and keeps at most perLang per language; perLang <= 0
+// keeps every surviving track. Languages keep their first-seen order so
+// the caller's listing stays stable.
 func RankSubtitles(subs []osdb.Subtitle, perLang int) []osdb.Subtitle {
 	byLang := map[string][]osdb.Subtitle{}
 	var order []string
