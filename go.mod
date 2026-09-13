@@ -1,6 +1,6 @@
 module github.com/webtor-io/video-info
 
-go 1.23
+go 1.24.0
 
 require (
 	github.com/aws/aws-sdk-go v1.55.5
@@ -39,6 +39,7 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
 	mellium.im/sasl v0.3.2 // indirect
 )
