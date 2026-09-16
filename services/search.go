@@ -6,14 +6,12 @@ import (
 	"github.com/webtor-io/video-info/services/osdb"
 	"sync"
 
-	"github.com/webtor-io/video-info/services/redis"
-
 	"github.com/pkg/errors"
 )
 
 type Search struct {
 	url      string
-	cache    *redis.Cache
+	cache    searchCache
 	value    []osdb.Subtitle
 	inited   bool
 	err      error
@@ -22,7 +20,7 @@ type Search struct {
 	cl       *osdb.Client
 }
 
-func NewSearch(url string, hp *HashPool, cl *osdb.Client, c *redis.Cache) *Search {
+func NewSearch(url string, hp *HashPool, cl *osdb.Client, c searchCache) *Search {
 	return &Search{
 		url:      url,
 		hashPool: hp,
@@ -34,11 +32,12 @@ func NewSearch(url string, hp *HashPool, cl *osdb.Client, c *redis.Cache) *Searc
 
 func (s *Search) get(ctx context.Context, purge bool) ([]osdb.Subtitle, error) {
 	if !purge {
-		subtitles, err := s.cache.GetSubtitles(ctx)
+		subtitles, found, err := s.cache.GetSubtitles(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get subtitles from cache")
 		}
-		if subtitles != nil && len(subtitles) > 0 {
+		if found {
+			// including the empty answer: it is what this file has.
 			return subtitles, nil
 		}
 	}

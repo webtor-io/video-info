@@ -6,8 +6,6 @@ import (
 	"github.com/webtor-io/video-info/services/osdb"
 	"sync"
 
-	"github.com/webtor-io/video-info/services/redis"
-
 	"github.com/pkg/errors"
 )
 
@@ -32,7 +30,7 @@ func (q SearchQuery) Key() string {
 
 type IMDBSearch struct {
 	q      SearchQuery
-	cache  *redis.Cache
+	cache  subtitleCache
 	value  []osdb.Subtitle
 	inited bool
 	err    error
@@ -40,17 +38,18 @@ type IMDBSearch struct {
 	cl     *osdb.Client
 }
 
-func NewIMDBSearch(q SearchQuery, cl *osdb.Client, c *redis.Cache) *IMDBSearch {
+func NewIMDBSearch(q SearchQuery, cl *osdb.Client, c subtitleCache) *IMDBSearch {
 	return &IMDBSearch{q: q, cl: cl, cache: c}
 }
 
 func (s *IMDBSearch) get(ctx context.Context, purge bool) ([]osdb.Subtitle, error) {
 	if !purge {
-		subtitles, err := s.cache.GetSubtitles(ctx)
+		subtitles, found, err := s.cache.GetSubtitles(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get subtitles from cache")
 		}
-		if subtitles != nil && len(subtitles) > 0 {
+		if found {
+			// including the empty answer: it is what this title has.
 			return subtitles, nil
 		}
 	}

@@ -8,15 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/webtor-io/video-info/services/redis"
-
 	sh "github.com/jeffallen/seekinghttp"
 	"github.com/pkg/errors"
 )
 
 type Hash struct {
 	url    string
-	cache  *redis.Cache
+	cache  hashCache
 	hash   uint64
 	size   int64
 	inited bool
@@ -24,7 +22,7 @@ type Hash struct {
 	mux    sync.Mutex
 }
 
-func NewHash(url string, c *redis.Cache) *Hash {
+func NewHash(url string, c hashCache) *Hash {
 	return &Hash{url: url, cache: c, inited: false}
 }
 

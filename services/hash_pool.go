@@ -3,8 +3,6 @@ package services
 import (
 	"context"
 	"sync"
-
-	"github.com/webtor-io/video-info/services/redis"
 )
 
 type HashPool struct {
@@ -15,7 +13,7 @@ func NewHashPool() *HashPool {
 	return &HashPool{}
 }
 
-func (s *HashPool) Get(ctx context.Context, url string, c *redis.Cache, purge bool) (uint64, int64, error) {
+func (s *HashPool) Get(ctx context.Context, url string, c hashCache, purge bool) (uint64, int64, error) {
 	v, loaded := s.sm.LoadOrStore(url, NewHash(url, c))
 	if !loaded {
 		defer s.sm.Delete(url)

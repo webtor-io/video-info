@@ -2,10 +2,9 @@ package services
 
 import (
 	"context"
-	"github.com/webtor-io/video-info/services/osdb"
 	"sync"
 
-	"github.com/webtor-io/video-info/services/redis"
+	"github.com/webtor-io/video-info/services/osdb"
 )
 
 type SearchPool struct {
@@ -21,7 +20,7 @@ func NewSearchPool(cl *osdb.Client) *SearchPool {
 	}
 }
 
-func (s *SearchPool) Get(ctx context.Context, url string, c *redis.Cache, purge bool) ([]osdb.Subtitle, error) {
+func (s *SearchPool) Get(ctx context.Context, url string, c searchCache, purge bool) ([]osdb.Subtitle, error) {
 	v, loaded := s.sm.LoadOrStore(url, NewSearch(url, s.hashPool, s.cl, c))
 	if !loaded {
 		defer s.sm.Delete(url)

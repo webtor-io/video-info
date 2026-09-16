@@ -2,10 +2,9 @@ package services
 
 import (
 	"context"
-	"github.com/webtor-io/video-info/services/osdb"
 	"sync"
 
-	"github.com/webtor-io/video-info/services/redis"
+	"github.com/webtor-io/video-info/services/osdb"
 )
 
 type IMDBSearchPool struct {
@@ -24,7 +23,7 @@ func NewIMDBSearchPool(cl *osdb.Client) *IMDBSearchPool {
 // as the query: the stored IMDBSearch captures the caller's cache, so two
 // files of the same title keyed only by the query would share one search bound
 // to whichever cache arrived first.
-func (s *IMDBSearchPool) Get(ctx context.Context, key string, q SearchQuery, c *redis.Cache, purge bool) ([]osdb.Subtitle, error) {
+func (s *IMDBSearchPool) Get(ctx context.Context, key string, q SearchQuery, c subtitleCache, purge bool) ([]osdb.Subtitle, error) {
 	v, loaded := s.sm.LoadOrStore(key, newIMDBSearch(q, s.cl, c))
 	if !loaded {
 		defer s.sm.Delete(key)

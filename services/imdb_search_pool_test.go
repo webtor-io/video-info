@@ -9,12 +9,12 @@ import (
 	"github.com/webtor-io/video-info/services/redis"
 )
 
-func cacheID(c *redis.Cache) string { return fmt.Sprintf("%p", c) }
+func cacheID(c subtitleCache) string { return fmt.Sprintf("%p", c) }
 
 // boundTo builds an already-inited IMDBSearch whose value names the very cache
 // instance it is bound to, so a caller can tell which stored search answered it
 // without touching redis.
-func boundTo(q SearchQuery, cl *osdb.Client, c *redis.Cache) *IMDBSearch {
+func boundTo(q SearchQuery, cl *osdb.Client, c subtitleCache) *IMDBSearch {
 	var s osdb.Subtitle
 	s.Id = cacheID(c)
 	return &IMDBSearch{q: q, cl: cl, cache: c, inited: true, value: []osdb.Subtitle{s}}

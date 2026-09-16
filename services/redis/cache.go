@@ -23,6 +23,24 @@ type HashAndSize struct {
 	Size int64
 }
 
+// subtitlesEntry is how a search result is stored. The marker is the whole
+// point of the wrapper: gob decodes an empty slice back as nil, so "this file
+// has no subtitles" was indistinguishable from "never searched", and 53% of
+// listings are empty — every one of them went to the API again on every page
+// view. The marker makes an empty answer an answer.
+type subtitlesEntry struct {
+	Found     bool
+	Subtitles []osdb.Subtitle
+}
+
+const (
+	subtitlesTTL = 24 * time.Hour
+	// emptySubtitlesTTL is shorter: a torrent published minutes ago usually has
+	// no subtitles yet, and a day-long "nothing here" would hide the ones
+	// uploaded right after it. (24h is the upstream cap for caching results.)
+	emptySubtitlesTTL = 6 * time.Hour
+)
+
 func NewCache(key string, cl *cs.RedisClient) *Cache {
 	return &Cache{key: key, cl: cl}
 }
@@ -72,26 +90,37 @@ func (s *Cache) SetHashAndSize(ctx context.Context, hash uint64, size int64) err
 	return nil
 }
 
-func (s *Cache) GetSubtitles(ctx context.Context) ([]osdb.Subtitle, error) {
-	//return nil, nil
+// GetSubtitles returns the cached list and whether this file has been searched
+// at all. An empty list with found=true is an answer, not a miss.
+func (s *Cache) GetSubtitles(ctx context.Context) ([]osdb.Subtitle, bool, error) {
 	cl := s.cl.Get()
-	//if err != nil {
-	//	return nil, errors.Wrap(err, "failed to get redis client")
-	//}
 	data, err := cl.Get(ctx, s.key+"subsrest").Bytes()
 	if errors.Is(err, redis.Nil) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get subs")
+		return nil, false, errors.Wrap(err, "failed to get subs")
 	}
-	var res []osdb.Subtitle
-	err = s.decode(data, &res)
-	if err != nil {
-		return nil, nil
-		//return nil, errors.Wrap(err, "failed to decode data")
+	subs, found := s.decodeSubtitles(data)
+	return subs, found, nil
+}
+
+// encodeSubtitles and decodeSubtitles are the stored form of a search result.
+// They are a pair on purpose: the Found marker only works if both ends agree,
+// and this is the boundary where the emptiness used to be lost.
+func (s *Cache) encodeSubtitles(subs []osdb.Subtitle) ([]byte, error) {
+	return s.encode(subtitlesEntry{Found: true, Subtitles: subs})
+}
+
+func (s *Cache) decodeSubtitles(data []byte) ([]osdb.Subtitle, bool) {
+	var res subtitlesEntry
+	if err := s.decode(data, &res); err != nil {
+		// Either a corrupt entry or one written before the marker existed (a
+		// bare slice, which fails as a type mismatch). Both are miss-and-rewrite
+		// rather than an error: the next search overwrites the key.
+		return nil, false
 	}
-	return res, nil
+	return res.Subtitles, res.Found
 }
 
 func (s *Cache) SetSubtitles(ctx context.Context, subs []osdb.Subtitle) error {
@@ -99,11 +128,15 @@ func (s *Cache) SetSubtitles(ctx context.Context, subs []osdb.Subtitle) error {
 	// if err != nil {
 	// 	return errors.Wrap(err, "Failed to get redis client")
 	// }
-	data, err := s.encode(subs)
+	data, err := s.encodeSubtitles(subs)
 	if err != nil {
 		return errors.Wrap(err, "failed to encode subs")
 	}
-	err = cl.Set(ctx, s.key+"subsrest", data, time.Hour*24).Err()
+	ttl := subtitlesTTL
+	if len(subs) == 0 {
+		ttl = emptySubtitlesTTL
+	}
+	err = cl.Set(ctx, s.key+"subsrest", data, ttl).Err()
 	if err != nil {
 		return errors.Wrap(err, "failed to set subs")
 	}
