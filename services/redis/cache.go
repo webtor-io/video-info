@@ -15,7 +15,17 @@ import (
 
 type Cache struct {
 	key string
-	cl  *cs.RedisClient
+	// store is resolved per call, not at construction: the shared client
+	// connects lazily. A test supplies its own.
+	store func() store
+}
+
+// store is the slice of the redis client this cache uses. It is narrow so a
+// test can implement it — the shared client's own interface has hundreds of
+// methods, which is why the TTL of a stored entry used to be unobservable.
+type store interface {
+	Get(ctx context.Context, key string) *redis.StringCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
 }
 
 type HashAndSize struct {
@@ -42,7 +52,7 @@ const (
 )
 
 func NewCache(key string, cl *cs.RedisClient) *Cache {
-	return &Cache{key: key, cl: cl}
+	return &Cache{key: key, store: func() store { return cl.Get() }}
 }
 
 // Key is the prefix every entry of this cache lives under. Callers that key
@@ -52,10 +62,7 @@ func (s *Cache) Key() string {
 }
 
 func (s *Cache) GetHashAndSize(ctx context.Context) (uint64, int64, error) {
-	cl := s.cl.Get()
-	// if err != nil {
-	// 	return 0, errors.Wrap(err, "Failed to get redis client")
-	// }
+	cl := s.store()
 	data, err := cl.Get(ctx, s.key+"hashandsize").Bytes()
 	if errors.Is(err, redis.Nil) {
 		return 0, 0, nil
@@ -75,10 +82,7 @@ func (s *Cache) GetHashAndSize(ctx context.Context) (uint64, int64, error) {
 }
 
 func (s *Cache) SetHashAndSize(ctx context.Context, hash uint64, size int64) error {
-	cl := s.cl.Get()
-	// if err != nil {
-	// 	return errors.Wrap(err, "failed to get redis client")
-	// }
+	cl := s.store()
 	data, err := s.encode(HashAndSize{Hash: hash, Size: size})
 	if err != nil {
 		return errors.Wrap(err, "failed to encode hash and size")
@@ -93,7 +97,7 @@ func (s *Cache) SetHashAndSize(ctx context.Context, hash uint64, size int64) err
 // GetSubtitles returns the cached list and whether this file has been searched
 // at all. An empty list with found=true is an answer, not a miss.
 func (s *Cache) GetSubtitles(ctx context.Context) ([]osdb.Subtitle, bool, error) {
-	cl := s.cl.Get()
+	cl := s.store()
 	data, err := cl.Get(ctx, s.key+"subsrest").Bytes()
 	if errors.Is(err, redis.Nil) {
 		return nil, false, nil
@@ -124,10 +128,7 @@ func (s *Cache) decodeSubtitles(data []byte) ([]osdb.Subtitle, bool) {
 }
 
 func (s *Cache) SetSubtitles(ctx context.Context, subs []osdb.Subtitle) error {
-	cl := s.cl.Get()
-	// if err != nil {
-	// 	return errors.Wrap(err, "Failed to get redis client")
-	// }
+	cl := s.store()
 	data, err := s.encodeSubtitles(subs)
 	if err != nil {
 		return errors.Wrap(err, "failed to encode subs")
@@ -144,10 +145,7 @@ func (s *Cache) SetSubtitles(ctx context.Context, subs []osdb.Subtitle) error {
 }
 
 func (s *Cache) GetSubtitle(ctx context.Context, id int, format string) ([]byte, error) {
-	cl := s.cl.Get()
-	// if err != nil {
-	// 	return nil, errors.Wrap(err, "failed to get redis client")
-	// }
+	cl := s.store()
 	data, err := cl.Get(ctx, s.key+"sub"+strconv.Itoa(id)+format).Bytes()
 	if errors.Is(err, redis.Nil) {
 		return nil, nil
@@ -159,10 +157,7 @@ func (s *Cache) GetSubtitle(ctx context.Context, id int, format string) ([]byte,
 }
 
 func (s *Cache) SetSubtitle(ctx context.Context, id int, format string, data []byte) error {
-	cl := s.cl.Get()
-	// if err != nil {
-	// 	return errors.Wrap(err, "failed to get redis client")
-	// }
+	cl := s.store()
 	err := cl.Set(ctx, s.key+"sub"+strconv.Itoa(id)+format, data, time.Hour*24).Err()
 	if err != nil {
 		return errors.Wrap(err, "failed to set subtitle")
