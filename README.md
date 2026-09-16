@@ -27,3 +27,34 @@ GLOBAL OPTIONS:
    --help, -h          show help
    --version, -v       print the version
 ```
+
+# HTTP API
+
+Both endpoints describe one file, named by the headers `X-Source-Url` (the seeder
+URL used to compute the OpenSubtitles moviehash), `X-Info-Hash` and `X-Path`
+(the cache keys). Search hints come from the query string: `imdb-id`, and
+`season` + `episode` together — a half-specified pair is ignored. `purge=true`
+bypasses every cache.
+
+## `GET /subtitles.json`
+
+Returns the track listing as a JSON array (never `null`), ranked and capped at
+three tracks per language.
+
+| Status | Meaning |
+|---|---|
+| `200` with a non-empty array | tracks found |
+| `200` with `[]` and no `Retry-After` | the file has no subtitles |
+| `200` with `[]` and `Retry-After: 5` | **not ready** — a search leg failed (the seeder could not serve the head/tail bytes in time, the client went away, the API errored). Ask again |
+| `404` | the request named neither a file nor a title, so there is no resource to report on |
+
+A failed leg is deliberately *not* a `404`: browsers, CDNs and `web-ui` read
+`404` as "this listing does not exist", while the real state is "come back in a
+moment". The cause is logged as the structured field `reason`
+(`hash_timeout`, `hash_error`, `imdb_error`, `client_gone`, `no_query`) so the
+empty answers can be split by cause.
+
+## `GET /opensubtitles/<id>.<format>`
+
+Returns the body of one track, converted to WebVTT. `404` when the id belongs to
+no track of this file.

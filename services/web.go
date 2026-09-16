@@ -175,36 +175,77 @@ func imdbCacheKey(infoHash, path string, q SearchQuery) string {
 // perLangCap is how many tracks per language a listing keeps.
 const perLangCap = 3
 
+// retryAfterSeconds is how long an unfinished listing asks the client to wait.
+const retryAfterSeconds = "5"
+
+// reasonNoQuery is the one failure that is a genuine 404: the request named
+// neither a file nor a title, so there is no resource to talk about.
+const reasonNoQuery = "no_query"
+
+// reasonClientGone is a cancelled request context: the viewer navigated away
+// before the seeder answered. Nothing is wrong with the file.
+const reasonClientGone = "client_gone"
+
+// failureReason names why a search leg failed, so the log can split the empty
+// listings by cause instead of lumping them into one bucket. leg is "hash" or
+// "imdb"; the result is e.g. "hash_timeout", "imdb_error", "client_gone".
+func failureReason(leg string, err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.Canceled) {
+		return reasonClientGone
+	}
+	var timeout interface{ Timeout() bool }
+	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
+		return leg + "_timeout"
+	}
+	return leg + "_error"
+}
+
 // search runs the hash leg first and falls back to the IMDb leg. The two legs
 // get their own cache: the hash leg keys on the file alone (so its moviehash
 // and its results are not fragmented by imdb-id/season/episode hints), the
 // IMDb leg keys on file+query. The returned source names the leg that produced
 // the list, never a property of the tracks in it.
-func (s *Web) search(ctx context.Context, sourceURL string, q SearchQuery, purge bool, hashCache, imdbCache *redis.Cache, logger *log.Entry) ([]osdb.Subtitle, string, error) {
+//
+// The third return separates "not ready" from "nothing here": it is empty when
+// both legs answered, and names the failure when one of them did not. Only a
+// request that carries nothing to search by is an error, and only that is a
+// 404 — a seeder that could not serve the head and tail bytes in time is not.
+func (s *Web) search(ctx context.Context, sourceURL string, q SearchQuery, purge bool, hashCache, imdbCache *redis.Cache, logger *log.Entry) ([]osdb.Subtitle, string, string, error) {
 	if sourceURL == "" && !q.Valid() {
-		return nil, "", errors.Errorf("no data provided to find subtitles")
+		return nil, "", reasonNoQuery, errors.Errorf("no data provided to find subtitles")
 	}
-	var subs []osdb.Subtitle
-	var err error
+	var reason string
 	if sourceURL != "" {
 		logger.Info("fetching subtitles by hash and file size")
-		subs, err = s.searcher.ByHash(ctx, sourceURL, hashCache, purge)
+		subs, err := s.searcher.ByHash(ctx, sourceURL, hashCache, purge)
 		if err != nil {
-			logger.WithError(err).Warn("hash search failed")
+			reason = failureReason("hash", err)
+			logger.WithError(err).WithField("reason", reason).Warn("hash search failed")
 		}
 		if ranked := RankSubtitles(subs, perLangCap); len(ranked) > 0 {
-			return ranked, "hash", nil
+			return ranked, "hash", "", nil
 		}
 	}
 	if !q.Valid() {
-		return nil, "", err
+		return nil, "", reason, nil
 	}
 	logger.WithField("episode", q.IsEpisode()).Info("fetching subtitles by IMDB id")
-	subs, err = s.searcher.ByIMDB(ctx, q, imdbCache, purge)
+	subs, err := s.searcher.ByIMDB(ctx, q, imdbCache, purge)
 	if err != nil {
-		return nil, "", err
+		reason = failureReason("imdb", err)
+		logger.WithError(err).WithField("reason", reason).Warn("imdb search failed")
+		return nil, "", reason, nil
 	}
-	return RankSubtitles(subs, perLangCap), "imdb", nil
+	ranked := RankSubtitles(subs, perLangCap)
+	if len(ranked) == 0 {
+		// The IMDb leg has nothing either. If the hash leg failed, the file may
+		// still have tracks we simply could not read yet, so keep its reason.
+		return nil, "imdb", reason, nil
+	}
+	return ranked, "imdb", "", nil
 }
 
 var (
@@ -234,9 +275,9 @@ func (s *Web) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 	}
 	logger = logger.WithField("id", id)
 	hashCache, imdbCache := s.caches(r, q)
-	subs, source, err := s.search(r.Context(), sourceURL, q, purge, hashCache, imdbCache, logger)
+	subs, source, reason, err := s.search(r.Context(), sourceURL, q, purge, hashCache, imdbCache, logger)
 	if err != nil {
-		logger.WithError(err).Error("failed to get subtitles")
+		logger.WithError(err).WithField("reason", reason).Error("failed to get subtitles")
 		w.WriteHeader(404)
 		return
 	}
@@ -276,9 +317,9 @@ func (s *Web) handleSubtitlesJSON(w http.ResponseWriter, r *http.Request) {
 	sourceURL := s.getSourceURL(r)
 	logger := s.requestLogger(r, q, sourceURL, purge)
 	hashCache, imdbCache := s.caches(r, q)
-	subs, source, err := s.search(r.Context(), sourceURL, q, purge, hashCache, imdbCache, logger)
+	subs, source, reason, err := s.search(r.Context(), sourceURL, q, purge, hashCache, imdbCache, logger)
 	if err != nil {
-		logger.WithError(err).Error("failed to get subtitles")
+		logger.WithError(err).WithField("reason", reason).Error("failed to get subtitles")
 		w.WriteHeader(404)
 		return
 	}
@@ -301,9 +342,16 @@ func (s *Web) handleSubtitlesJSON(w http.ResponseWriter, r *http.Request) {
 			Downloads: s.Attributes.DownloadCount,
 		})
 	}
-	logger.WithFields(log.Fields{"count": len(res), "source": source}).Infof("got subtitles")
+	if len(res) == 0 && reason != "" {
+		// A leg failed, so this is "not ready yet", not "no such thing". 404 is
+		// read as the latter by the browser, by the CDN and by web-ui, which
+		// parses the body without looking at the status at all; answer with an
+		// empty list of the usual shape and say when to come back.
+		w.Header().Set("Retry-After", retryAfterSeconds)
+	}
+	logger.WithFields(log.Fields{"count": len(res), "source": source, "reason": reason}).Infof("got subtitles")
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(res)
+	_ = json.NewEncoder(w).Encode(res)
 }
 
 func (s *Web) Serve() error {

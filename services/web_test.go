@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	pkgerrors "github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/webtor-io/video-info/services/osdb"
 	"github.com/webtor-io/video-info/services/redis"
@@ -81,7 +82,7 @@ func testLogger() *log.Entry {
 func TestSearchHashWins(t *testing.T) {
 	f := &fakeSearcher{hash: []osdb.Subtitle{hashOne("h")}, imdb: []osdb.Subtitle{one("i")}}
 	w := &Web{searcher: f}
-	subs, src, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
+	subs, src, _, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
 	if err != nil || src != "hash" || len(subs) != 1 || subs[0].Id != "h" {
 		t.Fatalf("subs=%v src=%q err=%v", subs, src, err)
 	}
@@ -95,7 +96,7 @@ func TestSearchHashWins(t *testing.T) {
 func TestSearchHashWinsWithoutMoviehashFlag(t *testing.T) {
 	f := &fakeSearcher{hash: []osdb.Subtitle{one("h")}, imdb: []osdb.Subtitle{one("i")}}
 	w := &Web{searcher: f}
-	subs, src, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
+	subs, src, _, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
 	if err != nil || src != "hash" || len(subs) != 1 || subs[0].Id != "h" {
 		t.Fatalf("subs=%v src=%q err=%v", subs, src, err)
 	}
@@ -109,7 +110,7 @@ func TestSearchUsesSeparateCachePerLeg(t *testing.T) {
 	ic := redis.NewCache("imdb-key", nil)
 	f := &fakeSearcher{imdb: []osdb.Subtitle{one("i")}}
 	w := &Web{searcher: f}
-	_, src, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, hc, ic, testLogger())
+	_, src, _, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, hc, ic, testLogger())
 	if err != nil || src != "imdb" {
 		t.Fatalf("src=%q err=%v", src, err)
 	}
@@ -124,7 +125,7 @@ func TestSearchUsesSeparateCachePerLeg(t *testing.T) {
 func TestSearchFallsBackToIMDBOnEmptyHash(t *testing.T) {
 	f := &fakeSearcher{imdb: []osdb.Subtitle{one("i")}}
 	w := &Web{searcher: f}
-	subs, src, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1", Season: 2, Episode: 5}, false, nil, nil, testLogger())
+	subs, src, _, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1", Season: 2, Episode: 5}, false, nil, nil, testLogger())
 	if err != nil || src != "imdb" || len(subs) != 1 || subs[0].Id != "i" {
 		t.Fatalf("subs=%v src=%q err=%v", subs, src, err)
 	}
@@ -136,7 +137,7 @@ func TestSearchFallsBackToIMDBOnEmptyHash(t *testing.T) {
 func TestSearchFallsBackToIMDBOnHashError(t *testing.T) {
 	f := &fakeSearcher{hashErr: errors.New("boom"), imdb: []osdb.Subtitle{one("i")}}
 	w := &Web{searcher: f}
-	_, src, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
+	_, src, _, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
 	if err != nil || src != "imdb" {
 		t.Fatalf("src=%q err=%v", src, err)
 	}
@@ -153,7 +154,7 @@ func TestSearchFallsBackWhenHashHitsAreAllFiltered(t *testing.T) {
 	b.Attributes.AiTranslated = true
 	f := &fakeSearcher{hash: []osdb.Subtitle{a, b}, imdb: []osdb.Subtitle{one("i")}}
 	w := &Web{searcher: f}
-	subs, src, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
+	subs, src, _, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
 	if err != nil || src != "imdb" || len(subs) != 1 || subs[0].Id != "i" {
 		t.Fatalf("subs=%v src=%q err=%v", subs, src, err)
 	}
@@ -165,7 +166,7 @@ func TestSearchFallsBackWhenHashHitsAreAllFiltered(t *testing.T) {
 func TestSearchNoIMDBNoFallback(t *testing.T) {
 	f := &fakeSearcher{}
 	w := &Web{searcher: f}
-	subs, src, err := w.search(context.Background(), "http://src", SearchQuery{}, false, nil, nil, testLogger())
+	subs, src, _, err := w.search(context.Background(), "http://src", SearchQuery{}, false, nil, nil, testLogger())
 	if err != nil || src != "" || len(subs) != 0 || len(f.calls) != 1 {
 		t.Fatalf("subs=%v src=%q err=%v calls=%v", subs, src, err, f.calls)
 	}
@@ -194,7 +195,7 @@ func TestHashCacheKeyIgnoresHints(t *testing.T) {
 func TestSearchIgnoresInvalidImdbID(t *testing.T) {
 	f := &fakeSearcher{imdb: []osdb.Subtitle{one("i")}}
 	w := &Web{searcher: f}
-	subs, src, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "1&x=y"}, false, nil, nil, testLogger())
+	subs, src, _, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "1&x=y"}, false, nil, nil, testLogger())
 	if err != nil || src != "" || len(subs) != 0 {
 		t.Fatalf("subs=%v src=%q err=%v", subs, src, err)
 	}
@@ -305,5 +306,137 @@ func TestSubtitlesJSONEmptyEncodesAsArray(t *testing.T) {
 	w.handleSubtitlesJSON(rr, r)
 	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "[]" {
 		t.Fatalf("status=%d body=%q", rr.Code, rr.Body.String())
+	}
+}
+
+// timeoutError is what a stalled read from a cold seeder looks like by the time
+// it reaches the handler: an error that only announces itself through Timeout().
+type timeoutError struct{}
+
+func (timeoutError) Error() string { return "read tcp: i/o timeout" }
+func (timeoutError) Timeout() bool { return true }
+
+func TestFailureReasonClassifies(t *testing.T) {
+	cases := []struct {
+		name string
+		leg  string
+		err  error
+		want string
+	}{
+		{"no error", "hash", nil, ""},
+		{"cancelled", "hash", context.Canceled, "client_gone"},
+		{"cancelled wrapped", "hash", pkgerrors.Wrap(context.Canceled, "failed to get hash"), "client_gone"},
+		{"deadline", "hash", context.DeadlineExceeded, "hash_timeout"},
+		{"net timeout wrapped", "hash", pkgerrors.Wrap(timeoutError{}, "failed to read head block"), "hash_timeout"},
+		{"other", "hash", errors.New("boom"), "hash_error"},
+		{"imdb leg", "imdb", errors.New("boom"), "imdb_error"},
+	}
+	for _, c := range cases {
+		if got := failureReason(c.leg, c.err); got != c.want {
+			t.Errorf("%s: failureReason(%q, %v)=%q want %q", c.name, c.leg, c.err, got, c.want)
+		}
+	}
+}
+
+// A failing hash leg means "not ready", not "no such resource". The reply keeps
+// the shape of a real listing (JSON array, same content type) and carries
+// Retry-After, because web-ui parses the body without checking the status and a
+// 404 also teaches the browser and the CDN that the track list does not exist.
+func TestSubtitlesJSONHashFailureAnswersEmptyList(t *testing.T) {
+	w := &Web{
+		searcher:  &fakeSearcher{hashErr: pkgerrors.Wrap(timeoutError{}, "failed to read head block")},
+		cachePool: redis.NewCachePool(nil),
+	}
+	srv := httptest.NewServer(http.HandlerFunc(w.handleSubtitlesJSON))
+	t.Cleanup(srv.Close)
+
+	req, err := http.NewRequest("GET", srv.URL+"/subtitles.json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Source-Url", "http://seeder/f.mkv?token=secret")
+	req.Header.Set("X-Info-Hash", "abc")
+	req.Header.Set("X-Path", "/f.mkv")
+	res, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d want 200", res.StatusCode)
+	}
+	if got := res.Header.Get("Retry-After"); got != "5" {
+		t.Fatalf("Retry-After=%q want 5", got)
+	}
+	if ct := res.Header.Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content-type=%q", ct)
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(body, &items); err != nil {
+		t.Fatalf("body=%q err=%v", body, err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("items=%v", items)
+	}
+}
+
+// The only genuine 404 left: the request names no file and no title, so there
+// is no resource to report on.
+func TestSubtitlesJSONWithoutFileOrTitleIs404(t *testing.T) {
+	w := &Web{searcher: &fakeSearcher{}, cachePool: redis.NewCachePool(nil)}
+	r := httptest.NewRequest("GET", "/subtitles.json", nil)
+	rr := httptest.NewRecorder()
+	w.handleSubtitlesJSON(rr, r)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status=%d want 404", rr.Code)
+	}
+}
+
+// Negative control for the header: a file that really has no subtitles answers
+// the same empty list, but without Retry-After — there is nothing to come back
+// for, and asking every viewer to retry every five seconds would be a lie.
+func TestSubtitlesJSONEmptyResultHasNoRetryAfter(t *testing.T) {
+	w := &Web{searcher: &fakeSearcher{}, cachePool: redis.NewCachePool(nil)}
+	r := httptest.NewRequest("GET", "/subtitles.json", nil)
+	r.Header.Set("X-Source-Url", "http://seeder/f.mkv")
+	rr := httptest.NewRecorder()
+	w.handleSubtitlesJSON(rr, r)
+	if rr.Code != http.StatusOK || strings.TrimSpace(rr.Body.String()) != "[]" {
+		t.Fatalf("status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Retry-After"); got != "" {
+		t.Fatalf("Retry-After=%q want none", got)
+	}
+}
+
+// The reason travels with an empty listing so the log can split the causes.
+func TestSearchReportsFailureReason(t *testing.T) {
+	f := &fakeSearcher{hashErr: pkgerrors.Wrap(context.Canceled, "failed to get hash")}
+	w := &Web{searcher: f}
+	subs, src, reason, err := w.search(context.Background(), "http://src", SearchQuery{}, false, nil, nil, testLogger())
+	if err != nil || len(subs) != 0 || src != "" {
+		t.Fatalf("subs=%v src=%q err=%v", subs, src, err)
+	}
+	if reason != "client_gone" {
+		t.Fatalf("reason=%q want client_gone", reason)
+	}
+}
+
+// A hash leg that failed still counts as unfinished when the imdb leg turned up
+// nothing, so the viewer is told to come back rather than told there is nothing.
+func TestSearchKeepsHashReasonWhenIMDBIsEmpty(t *testing.T) {
+	f := &fakeSearcher{hashErr: errors.New("boom")}
+	w := &Web{searcher: f}
+	_, _, reason, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reason != "hash_error" {
+		t.Fatalf("reason=%q want hash_error", reason)
+	}
+	if !callsEqual(f.calls, []string{"hash", "imdb"}) {
+		t.Fatalf("calls=%v", f.calls)
 	}
 }
