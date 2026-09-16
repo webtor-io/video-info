@@ -168,7 +168,7 @@ func redactURL(u string) string {
 
 // urlQuery matches the query of any URL inside a text. The seeder URL carries
 // the access token there.
-var urlQuery = regexp.MustCompile(`(https?://[^\s"']*)\?[^\s"']*`)
+var urlQuery = regexp.MustCompile(`(https?://[^\s"'?]*)\?[^\s"']*`)
 
 // redactErr renders an error with the query of every URL in it stripped, for
 // logging. It is needed because the dependency that reads the head and tail
@@ -258,7 +258,8 @@ func joinReasons(a, b string) string {
 	switch {
 	case a == "":
 		return b
-	case b == "":
+	case b == "" || a == b:
+		// One cancelled context fails both legs the same way: name it once.
 		return a
 	default:
 		return a + "+" + b

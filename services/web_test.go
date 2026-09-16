@@ -744,6 +744,14 @@ func TestRedactErrStripsTheQueryFromURLsInTheMessage(t *testing.T) {
 	}
 }
 
+// A second "?" inside the query must not leave the first segment in the clear.
+func TestRedactErrStripsEverythingAfterTheFirstQuestionMark(t *testing.T) {
+	got := redactErr(errors.New("GET http://seeder/f.mkv?token=" + leakToken + "?x=1: boom")).Error()
+	if strings.Contains(got, leakToken) || strings.Contains(got, "token=") {
+		t.Fatalf("query segment survived: %q", got)
+	}
+}
+
 func TestRedactErrLeavesAnErrorWithoutAURLAlone(t *testing.T) {
 	if got := redactErr(errors.New("boom")).Error(); got != "boom" {
 		t.Fatalf("got %q", got)
@@ -803,6 +811,8 @@ func TestJoinReasons(t *testing.T) {
 		{"hash_timeout", "", "hash_timeout"},
 		{"", "imdb_error", "imdb_error"},
 		{"hash_timeout", "imdb_error", "hash_timeout+imdb_error"},
+		// one cancelled context fails both legs: named once, not twice
+		{"client_gone", "client_gone", "client_gone"},
 	}
 	for _, c := range cases {
 		if got := joinReasons(c.a, c.b); got != c.want {
