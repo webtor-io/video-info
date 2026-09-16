@@ -70,7 +70,9 @@ A failed leg is deliberately *not* a `404`: browsers, CDNs and `web-ui` read
 `404` as "this listing does not exist", while the real state is "come back in a
 moment". The cause is logged as the structured field `reason`
 (`hash_timeout`, `hash_error`, `imdb_error`, `client_gone`, `no_query`) so the
-empty answers can be split by cause.
+empty answers can be split by cause. When both legs fail the two causes are
+joined with `+` (`hash_timeout+imdb_error`) rather than one overwriting the
+other — that combination is the one worth seeing.
 
 ## `GET /opensubtitles/<id>.<format>`
 

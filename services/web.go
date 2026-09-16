@@ -250,6 +250,21 @@ func failureReason(leg string, err error) string {
 	return leg + "_error"
 }
 
+// joinReasons keeps both legs' failures instead of letting the second overwrite
+// the first. "The seeder did not answer *and* the API errored" is the case most
+// worth seeing when the empty answers are split by cause, and it is exactly the
+// one an overwrite hides.
+func joinReasons(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	default:
+		return a + "+" + b
+	}
+}
+
 // search runs the hash leg first and falls back to the IMDb leg. The two legs
 // get their own cache: the hash leg keys on the file alone (so its moviehash
 // and its results are not fragmented by imdb-id/season/episode hints), the
@@ -270,7 +285,7 @@ func (s *Web) search(ctx context.Context, sourceURL string, q SearchQuery, purge
 		logger.Info("fetching subtitles by hash and file size")
 		subs, err := s.searcher.ByHash(ctx, sourceURL, hashCache, purge)
 		if err != nil {
-			reason = failureReason("hash", err)
+			reason = joinReasons(reason, failureReason("hash", err))
 			logger.WithError(redactErr(err)).WithField("reason", reason).Warn("hash search failed")
 		}
 		if ranked := RankSubtitles(subs, perLangCap); len(ranked) > 0 {
@@ -283,7 +298,7 @@ func (s *Web) search(ctx context.Context, sourceURL string, q SearchQuery, purge
 	logger.WithField("episode", q.IsEpisode()).Info("fetching subtitles by IMDB id")
 	subs, err := s.searcher.ByIMDB(ctx, q, imdbCache, purge)
 	if err != nil {
-		reason = failureReason("imdb", err)
+		reason = joinReasons(reason, failureReason("imdb", err))
 		logger.WithError(redactErr(err)).WithField("reason", reason).Warn("imdb search failed")
 		return nil, "", reason, nil
 	}
@@ -329,7 +344,7 @@ func (s *Web) findTrack(ctx context.Context, id string, sourceURL string, q Sear
 	if sourceURL != "" {
 		subs, err := s.searcher.ByHash(ctx, sourceURL, hashCache, purge)
 		if err != nil {
-			reason = failureReason("hash", err)
+			reason = joinReasons(reason, failureReason("hash", err))
 			logger.WithError(redactErr(err)).WithField("reason", reason).Warn("hash search failed")
 		}
 		if sub := trackByID(RankSubtitles(subs, 0), id); sub != nil {
@@ -339,7 +354,7 @@ func (s *Web) findTrack(ctx context.Context, id string, sourceURL string, q Sear
 	if q.Valid() {
 		subs, err := s.searcher.ByIMDB(ctx, q, imdbCache, purge)
 		if err != nil {
-			reason = failureReason("imdb", err)
+			reason = joinReasons(reason, failureReason("imdb", err))
 			logger.WithError(redactErr(err)).WithField("reason", reason).Warn("imdb search failed")
 		}
 		if sub := trackByID(RankSubtitles(subs, 0), id); sub != nil {

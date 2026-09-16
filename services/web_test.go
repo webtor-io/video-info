@@ -796,3 +796,62 @@ func TestHandlersDoNotLogTheSeederToken(t *testing.T) {
 		})
 	}
 }
+
+func TestJoinReasons(t *testing.T) {
+	cases := []struct{ a, b, want string }{
+		{"", "", ""},
+		{"hash_timeout", "", "hash_timeout"},
+		{"", "imdb_error", "imdb_error"},
+		{"hash_timeout", "imdb_error", "hash_timeout+imdb_error"},
+	}
+	for _, c := range cases {
+		if got := joinReasons(c.a, c.b); got != c.want {
+			t.Errorf("joinReasons(%q,%q)=%q want %q", c.a, c.b, got, c.want)
+		}
+	}
+}
+
+// Both legs down at once is the case worth seeing in the split, so neither
+// cause may overwrite the other.
+func TestSearchKeepsBothLegReasons(t *testing.T) {
+	f := &fakeSearcher{
+		hashErr: pkgerrors.Wrap(timeoutError{}, "failed to read head block"),
+		imdbErr: errors.New("boom"),
+	}
+	w := &Web{searcher: f}
+	_, _, reason, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reason != "hash_timeout+imdb_error" {
+		t.Fatalf("reason=%q want hash_timeout+imdb_error", reason)
+	}
+}
+
+func TestFindTrackKeepsBothLegReasons(t *testing.T) {
+	f := &fakeSearcher{
+		hashErr: pkgerrors.Wrap(timeoutError{}, "failed to read head block"),
+		imdbErr: context.Canceled,
+	}
+	w := &Web{searcher: f}
+	sub, _, reason := w.findTrack(context.Background(), "11", "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
+	if sub != nil {
+		t.Fatalf("sub=%+v", sub)
+	}
+	if reason != "hash_timeout+client_gone" {
+		t.Fatalf("reason=%q want hash_timeout+client_gone", reason)
+	}
+}
+
+// One leg down still reports one cause, not a dangling separator.
+func TestSearchSingleLegReasonIsNotJoined(t *testing.T) {
+	f := &fakeSearcher{hashErr: errors.New("boom"), imdb: []osdb.Subtitle{}}
+	w := &Web{searcher: f}
+	_, _, reason, err := w.search(context.Background(), "http://src", SearchQuery{ImdbID: "tt1"}, false, nil, nil, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reason != "hash_error" {
+		t.Fatalf("reason=%q want hash_error", reason)
+	}
+}
