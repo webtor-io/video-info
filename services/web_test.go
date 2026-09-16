@@ -91,8 +91,10 @@ func TestSearchHashWins(t *testing.T) {
 	}
 }
 
-// The source is the leg that produced the list, not a property of the tracks:
-// a hash hit with no moviehash_match flag is still "hash".
+// The leg name search returns is the leg, not a property of the tracks: a hash
+// hit with no moviehash_match flag still came from the hash leg. It is used for
+// logging only; what the client is told per track is checked by
+// TestSubtitlesJSONSourceIsPerTrack.
 func TestSearchHashWinsWithoutMoviehashFlag(t *testing.T) {
 	f := &fakeSearcher{hash: []osdb.Subtitle{one("h")}, imdb: []osdb.Subtitle{one("i")}}
 	w := &Web{searcher: f}
@@ -595,5 +597,52 @@ func TestHandleSubtitleWithoutFileOrTitleIs404(t *testing.T) {
 	}
 	if len(f.calls) != 0 {
 		t.Fatalf("no leg must run: %v", f.calls)
+	}
+}
+
+// source describes the track, not the leg. A moviehash search returns the tracks
+// of the movie, and only some of them actually matched the hash; the rest are
+// no better synced than an imdb result and must not be labelled as if they were.
+func TestSubtitlesJSONSourceIsPerTrack(t *testing.T) {
+	matched, unmatched := hashOne("1"), one("2")
+	f := &fakeSearcher{hash: []osdb.Subtitle{matched, unmatched}}
+	w := &Web{searcher: f, cachePool: redis.NewCachePool(nil)}
+
+	rr := httptest.NewRecorder()
+	w.handleSubtitlesJSON(rr, subtitleRequest("/subtitles.json"))
+
+	var items []map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &items); err != nil {
+		t.Fatalf("body=%q err=%v", rr.Body.String(), err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items=%v", items)
+	}
+	if items[0]["source"] != "hash" || items[0]["moviehash_match"] != true {
+		t.Fatalf("hash-matched track: %v", items[0])
+	}
+	if items[1]["source"] != "imdb" || items[1]["moviehash_match"] != false {
+		t.Fatalf("track of the same movie, not of this file: %v", items[1])
+	}
+}
+
+// The flag is reported even when it agrees with source, so a consumer never has
+// to infer it from the label.
+func TestSubtitlesJSONCarriesMoviehashMatchFromIMDBLeg(t *testing.T) {
+	f := &fakeSearcher{imdb: []osdb.Subtitle{one("2")}}
+	w := &Web{searcher: f, cachePool: redis.NewCachePool(nil)}
+
+	rr := httptest.NewRecorder()
+	w.handleSubtitlesJSON(rr, subtitleRequest("/subtitles.json?imdb-id=tt1"))
+
+	var items []map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &items); err != nil {
+		t.Fatalf("body=%q err=%v", rr.Body.String(), err)
+	}
+	if len(items) != 1 || items[0]["source"] != "imdb" {
+		t.Fatalf("items=%v", items)
+	}
+	if v, ok := items[0]["moviehash_match"]; !ok || v != false {
+		t.Fatalf("moviehash_match must be present and false: %v", items[0])
 	}
 }

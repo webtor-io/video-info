@@ -48,6 +48,24 @@ three tracks per language.
 | `200` with `[]` and `Retry-After: 5` | **not ready** — a search leg failed (the seeder could not serve the head/tail bytes in time, the client went away, the API errored). Ask again |
 | `404` | the request named neither a file nor a title, so there is no resource to report on |
 
+### Track fields
+
+| Field | Meaning |
+|---|---|
+| `srclang`, `label` | ISO 639-1 code and its English name |
+| `src` | path of the track body, `/opensubtitles/<id>.vtt` |
+| `format` | always `vtt` |
+| `id` | OpenSubtitles subtitle id; the id in `src` |
+| `source` | **how confident the sync is for this track**: `hash` when OpenSubtitles matched this exact file, `imdb` when the track only belongs to the same title |
+| `moviehash_match` | the raw flag `source` is derived from |
+| `release`, `fps`, `hi`, `downloads` | omitted when zero |
+
+`source` describes the *track*, not the search leg that found it. A moviehash
+search returns the tracks of the whole movie and flags only the ones that
+actually matched the hash, so a hash-leg track without `moviehash_match` is no
+better synced to this release than an imdb result and is reported as `imdb`.
+Ranking still puts the matched ones first.
+
 A failed leg is deliberately *not* a `404`: browsers, CDNs and `web-ui` read
 `404` as "this listing does not exist", while the real state is "come back in a
 moment". The cause is logged as the structured field `reason`

@@ -61,16 +61,36 @@ const (
 )
 
 type Subtitle struct {
-	SrcLang   string  `json:"srclang"`
-	Label     string  `json:"label"`
-	Src       string  `json:"src"`
-	Format    string  `json:"format"`
-	ID        string  `json:"id"`
-	Source    string  `json:"source"`
-	Release   string  `json:"release,omitempty"`
-	Fps       float64 `json:"fps,omitempty"`
-	HI        bool    `json:"hi,omitempty"`
-	Downloads int     `json:"downloads,omitempty"`
+	SrcLang string `json:"srclang"`
+	Label   string `json:"label"`
+	Src     string `json:"src"`
+	Format  string `json:"format"`
+	ID      string `json:"id"`
+	// Source says how confident the sync is for this one track: "hash" when
+	// OpenSubtitles matched this exact file, "imdb" when the track only belongs
+	// to the same title. It is a property of the track, not of the leg that
+	// found it — see trackSource.
+	Source string `json:"source"`
+	// MoviehashMatch is the raw flag Source is derived from, carried so a
+	// consumer can tell the two apart without reading this comment.
+	MoviehashMatch bool    `json:"moviehash_match"`
+	Release        string  `json:"release,omitempty"`
+	Fps            float64 `json:"fps,omitempty"`
+	HI             bool    `json:"hi,omitempty"`
+	Downloads      int     `json:"downloads,omitempty"`
+}
+
+// trackSource reports how the track was matched to the file. A moviehash search
+// returns the tracks of the *movie*, not only the tracks that matched the hash,
+// and only some of them carry moviehash_match. Reporting the leg would label a
+// track that may well drift against this release as "in sync with this exact
+// file", which is what web-ui reads it as when it puts the track at the top of
+// its ladder.
+func trackSource(s osdb.Subtitle) string {
+	if s.Attributes.MoviehashMatch {
+		return "hash"
+	}
+	return "imdb"
 }
 
 type Subtitles []Subtitle
@@ -213,7 +233,8 @@ func failureReason(leg string, err error) string {
 // get their own cache: the hash leg keys on the file alone (so its moviehash
 // and its results are not fragmented by imdb-id/season/episode hints), the
 // IMDb leg keys on file+query. The returned source names the leg that produced
-// the list, never a property of the tracks in it.
+// the list and is used for logging only; what the client is told about a track
+// is per-track — see trackSource.
 //
 // The third return separates "not ready" from "nothing here": it is empty when
 // both legs answered, and names the failure when one of them did not. Only a
@@ -372,16 +393,17 @@ func (s *Web) handleSubtitlesJSON(w http.ResponseWriter, r *http.Request) {
 			label = s.Attributes.Language
 		}
 		res = append(res, Subtitle{
-			SrcLang:   s.Attributes.Language,
-			Label:     label,
-			Src:       fmt.Sprintf("/opensubtitles/%v.%v", s.Id, "vtt"),
-			Format:    "vtt",
-			ID:        s.Id,
-			Source:    source,
-			Release:   s.Attributes.Release,
-			Fps:       s.Attributes.Fps,
-			HI:        s.Attributes.HearingImpaired,
-			Downloads: s.Attributes.DownloadCount,
+			SrcLang:        s.Attributes.Language,
+			Label:          label,
+			Src:            fmt.Sprintf("/opensubtitles/%v.%v", s.Id, "vtt"),
+			Format:         "vtt",
+			ID:             s.Id,
+			Source:         trackSource(s),
+			MoviehashMatch: s.Attributes.MoviehashMatch,
+			Release:        s.Attributes.Release,
+			Fps:            s.Attributes.Fps,
+			HI:             s.Attributes.HearingImpaired,
+			Downloads:      s.Attributes.DownloadCount,
 		})
 	}
 	if len(res) == 0 && reason != "" {
