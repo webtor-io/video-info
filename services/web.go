@@ -166,6 +166,27 @@ func redactURL(u string) string {
 	return p.String()
 }
 
+// urlQuery matches the query of any URL inside a text. The seeder URL carries
+// the access token there.
+var urlQuery = regexp.MustCompile(`(https?://[^\s"']*)\?[^\s"']*`)
+
+// redactErr renders an error with the query of every URL in it stripped, for
+// logging. It is needed because the dependency that reads the head and tail
+// bytes hands back the *url.Error from http.Client.Do unwrapped, and
+// url.Error.Error() prints the whole URL — so the access token reached the log
+// through WithError on the most common failure path there is, right next to the
+// field redactURL had carefully cleaned.
+//
+// The chain is flattened rather than rewritten in place: a log site only
+// renders the message, while the error itself is memoised in Hash/Search and
+// handed to other goroutines, so mutating its URL would be a data race.
+func redactErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return errors.New(urlQuery.ReplaceAllString(err.Error(), "$1?<redacted>"))
+}
+
 // requestLogger describes the request without its secrets.
 func (s *Web) requestLogger(r *http.Request, q SearchQuery, sourceURL string, purge bool) *log.Entry {
 	return log.WithFields(log.Fields{
@@ -250,7 +271,7 @@ func (s *Web) search(ctx context.Context, sourceURL string, q SearchQuery, purge
 		subs, err := s.searcher.ByHash(ctx, sourceURL, hashCache, purge)
 		if err != nil {
 			reason = failureReason("hash", err)
-			logger.WithError(err).WithField("reason", reason).Warn("hash search failed")
+			logger.WithError(redactErr(err)).WithField("reason", reason).Warn("hash search failed")
 		}
 		if ranked := RankSubtitles(subs, perLangCap); len(ranked) > 0 {
 			return ranked, "hash", "", nil
@@ -263,7 +284,7 @@ func (s *Web) search(ctx context.Context, sourceURL string, q SearchQuery, purge
 	subs, err := s.searcher.ByIMDB(ctx, q, imdbCache, purge)
 	if err != nil {
 		reason = failureReason("imdb", err)
-		logger.WithError(err).WithField("reason", reason).Warn("imdb search failed")
+		logger.WithError(redactErr(err)).WithField("reason", reason).Warn("imdb search failed")
 		return nil, "", reason, nil
 	}
 	ranked := RankSubtitles(subs, perLangCap)
@@ -309,7 +330,7 @@ func (s *Web) findTrack(ctx context.Context, id string, sourceURL string, q Sear
 		subs, err := s.searcher.ByHash(ctx, sourceURL, hashCache, purge)
 		if err != nil {
 			reason = failureReason("hash", err)
-			logger.WithError(err).WithField("reason", reason).Warn("hash search failed")
+			logger.WithError(redactErr(err)).WithField("reason", reason).Warn("hash search failed")
 		}
 		if sub := trackByID(RankSubtitles(subs, 0), id); sub != nil {
 			return sub, hashCache, ""
@@ -319,7 +340,7 @@ func (s *Web) findTrack(ctx context.Context, id string, sourceURL string, q Sear
 		subs, err := s.searcher.ByIMDB(ctx, q, imdbCache, purge)
 		if err != nil {
 			reason = failureReason("imdb", err)
-			logger.WithError(err).WithField("reason", reason).Warn("imdb search failed")
+			logger.WithError(redactErr(err)).WithField("reason", reason).Warn("imdb search failed")
 		}
 		if sub := trackByID(RankSubtitles(subs, 0), id); sub != nil {
 			return sub, imdbCache, ""
@@ -345,7 +366,7 @@ func (s *Web) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := strconv.Atoi(values[1])
 	if err != nil {
-		logger.WithError(err).WithField("id", values[1]).Error("failed to parse id")
+		logger.WithError(redactErr(err)).WithField("id", values[1]).Error("failed to parse id")
 		w.WriteHeader(400)
 		return
 	}
@@ -378,7 +399,7 @@ func (s *Web) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 
 	su, err := s.subsPool.Get(r.Context(), sub, "webvtt", cache, purge, logger)
 	if err != nil {
-		logger.WithError(err).Error("failed to get subtitle")
+		logger.WithError(redactErr(err)).Error("failed to get subtitle")
 		w.WriteHeader(404)
 		return
 	}
@@ -394,7 +415,7 @@ func (s *Web) handleSubtitlesJSON(w http.ResponseWriter, r *http.Request) {
 	hashCache, imdbCache := s.caches(r, q)
 	subs, source, reason, err := s.search(r.Context(), sourceURL, q, purge, hashCache, imdbCache, logger)
 	if err != nil {
-		logger.WithError(err).WithField("reason", reason).Error("failed to get subtitles")
+		logger.WithError(redactErr(err)).WithField("reason", reason).Error("failed to get subtitles")
 		w.WriteHeader(404)
 		return
 	}

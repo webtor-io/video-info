@@ -1,12 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -707,5 +709,90 @@ func TestHandleSubtitleLegFailureWithAResultIs200(t *testing.T) {
 	}
 	if got := rr.Header().Get("Retry-After"); got != "" {
 		t.Fatalf("Retry-After=%q want none", got)
+	}
+}
+
+const leakToken = "eyJhbGciOiJIUzI1NiJ9.leaked-token-value"
+
+// seederTimeout is what the head/tail read actually returns: the dependency
+// hands back http.Client.Do's *url.Error unwrapped, and its Error() prints the
+// full URL, query and all.
+func seederTimeout() error {
+	return pkgerrors.Wrap(pkgerrors.Wrap(&url.Error{
+		Op:  "Get",
+		URL: "http://seeder/f.mkv?token=" + leakToken,
+		Err: context.DeadlineExceeded,
+	}, "failed to read chunk"), "failed to read head block")
+}
+
+func TestRedactErrStripsTheQueryFromURLsInTheMessage(t *testing.T) {
+	got := redactErr(seederTimeout()).Error()
+	if strings.Contains(got, leakToken) {
+		t.Fatalf("token survived redaction: %q", got)
+	}
+	// the location is what makes the line useful; only the query goes
+	if !strings.Contains(got, "http://seeder/f.mkv") {
+		t.Fatalf("location lost: %q", got)
+	}
+	for _, want := range []string{"failed to read head block", "context deadline exceeded"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("message lost %q: %q", want, got)
+		}
+	}
+	if redactErr(nil) != nil {
+		t.Fatal("redactErr(nil) must stay nil")
+	}
+}
+
+func TestRedactErrLeavesAnErrorWithoutAURLAlone(t *testing.T) {
+	if got := redactErr(errors.New("boom")).Error(); got != "boom" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// captureLog points the package logger, which the handlers use, at a buffer.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(io.Discard) })
+	return &buf
+}
+
+// The seeder URL reaches the log twice: as a field, which redactURL has always
+// cleaned, and inside the error, which it did not. Both handlers log the same
+// failing legs, so both are checked.
+func TestHandlersDoNotLogTheSeederToken(t *testing.T) {
+	cases := map[string]func(*Web, http.ResponseWriter, *http.Request){
+		"listing": func(w *Web, rw http.ResponseWriter, r *http.Request) { w.handleSubtitlesJSON(rw, r) },
+		"track":   func(w *Web, rw http.ResponseWriter, r *http.Request) { w.handleSubtitle(rw, r) },
+	}
+	paths := map[string]string{
+		"listing": "/subtitles.json?imdb-id=tt1",
+		"track":   "/opensubtitles/11.vtt?imdb-id=tt1",
+	}
+	for name, call := range cases {
+		t.Run(name, func(t *testing.T) {
+			buf := captureLog(t)
+			// both legs fail, so every WithError site on the path is exercised
+			f := &fakeSearcher{hashErr: seederTimeout(), imdbErr: seederTimeout()}
+			w := &Web{searcher: f, subsPool: &fakeFetcher{}, cachePool: redis.NewCachePool(nil)}
+			r := httptest.NewRequest("GET", paths[name], nil)
+			r.Header.Set("X-Source-Url", "http://seeder/f.mkv?token="+leakToken)
+			r.Header.Set("X-Info-Hash", "abc")
+			r.Header.Set("X-Path", "/f.mkv")
+			call(w, httptest.NewRecorder(), r)
+
+			out := buf.String()
+			if out == "" {
+				t.Fatal("nothing logged; the test would pass vacuously")
+			}
+			if strings.Contains(out, leakToken) {
+				t.Fatalf("token in log: %s", out)
+			}
+			if !strings.Contains(out, "seeder/f.mkv") {
+				t.Fatalf("the location must survive, only the query goes: %s", out)
+			}
+		})
 	}
 }
