@@ -26,6 +26,12 @@ type subtitleSearcher interface {
 	ByIMDB(ctx context.Context, q SearchQuery, cache *redis.Cache, purge bool) ([]osdb.Subtitle, error)
 }
 
+// subtitleFetcher reads the body of one track. *SubsPool is the production
+// implementation.
+type subtitleFetcher interface {
+	Get(ctx context.Context, sub *osdb.Subtitle, format string, c *redis.Cache, purge bool, logger *log.Entry) ([]byte, error)
+}
+
 type poolSearcher struct {
 	hash *SearchPool
 	imdb *IMDBSearchPool
@@ -43,7 +49,7 @@ type Web struct {
 	port      int
 	ln        net.Listener
 	searcher  subtitleSearcher
-	subsPool  *SubsPool
+	subsPool  subtitleFetcher
 	cachePool *redis.CachePool
 	sourceURL string
 }
@@ -252,6 +258,55 @@ var (
 	re = regexp.MustCompile("(\\d+).([a-z]+)")
 )
 
+// trackByID finds one track among a leg's candidates.
+func trackByID(subs []osdb.Subtitle, id string) *osdb.Subtitle {
+	for i := range subs {
+		if subs[i].Id == id {
+			return &subs[i]
+		}
+	}
+	return nil
+}
+
+// findTrack resolves a track id against the union of both legs and reports the
+// cache the track's body belongs to (bodies are keyed per leg).
+//
+// The id cannot be looked up in a fresh listing, because the listing is not
+// stable: on a cold torrent the hash leg fails, the viewer gets an imdb listing,
+// and a second later the hash leg succeeds — a re-run search would then return
+// the hash list, which does not contain the id the viewer just clicked. An
+// expiring 24h cache entry flips it the other way. So a miss in the first leg
+// is not a 404 until the other leg has been asked as well.
+//
+// The lookup runs over the full candidate set of each leg, not the ranked and
+// capped listing: ranking answers "what do we show", not "does this id exist".
+// The per-track filter stays, so the id space is exactly the set of tracks that
+// could ever have been listed.
+func (s *Web) findTrack(ctx context.Context, id string, sourceURL string, q SearchQuery, purge bool, hashCache, imdbCache *redis.Cache, logger *log.Entry) (*osdb.Subtitle, *redis.Cache, string) {
+	var reason string
+	if sourceURL != "" {
+		subs, err := s.searcher.ByHash(ctx, sourceURL, hashCache, purge)
+		if err != nil {
+			reason = failureReason("hash", err)
+			logger.WithError(err).WithField("reason", reason).Warn("hash search failed")
+		}
+		if sub := trackByID(RankSubtitles(subs, 0), id); sub != nil {
+			return sub, hashCache, ""
+		}
+	}
+	if q.Valid() {
+		subs, err := s.searcher.ByIMDB(ctx, q, imdbCache, purge)
+		if err != nil {
+			reason = failureReason("imdb", err)
+			logger.WithError(err).WithField("reason", reason).Warn("imdb search failed")
+		}
+		if sub := trackByID(RankSubtitles(subs, 0), id); sub != nil {
+			return sub, imdbCache, ""
+		}
+	}
+	return nil, nil, reason
+}
+
 func (s *Web) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 	values := re.FindStringSubmatch(r.URL.Path)
 	if len(values) == 0 {
@@ -274,33 +329,20 @@ func (s *Web) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger = logger.WithField("id", id)
-	hashCache, imdbCache := s.caches(r, q)
-	subs, source, reason, err := s.search(r.Context(), sourceURL, q, purge, hashCache, imdbCache, logger)
-	if err != nil {
-		logger.WithError(err).WithField("reason", reason).Error("failed to get subtitles")
+	if sourceURL == "" && !q.Valid() {
+		logger.WithField("reason", reasonNoQuery).Error("failed to get subtitles")
 		w.WriteHeader(404)
 		return
 	}
-
-	var sub *osdb.Subtitle
-	for _, ss := range subs {
-		if ss.Id == strconv.Itoa(id) {
-			sub = &ss
-			break
-		}
-	}
+	hashCache, imdbCache := s.caches(r, q)
+	sub, cache, reason := s.findTrack(r.Context(), strconv.Itoa(id), sourceURL, q, purge, hashCache, imdbCache, logger)
 	if sub == nil {
-		logger.WithField("count", len(subs)).WithField("source", source).Error("failed to find subtitle by id")
+		logger.WithField("reason", reason).Error("failed to find subtitle by id")
 		w.WriteHeader(404)
 		return
 	}
 	logger.Info("fetching subtitle")
 
-	// the subtitle body belongs to the leg that listed it
-	cache := hashCache
-	if source == "imdb" {
-		cache = imdbCache
-	}
 	su, err := s.subsPool.Get(r.Context(), sub, "webvtt", cache, purge, logger)
 	if err != nil {
 		logger.WithError(err).Error("failed to get subtitle")
@@ -308,7 +350,7 @@ func (s *Web) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	logger.Info("got subtitle")
-	w.Write(su)
+	_, _ = w.Write(su)
 }
 
 func (s *Web) handleSubtitlesJSON(w http.ResponseWriter, r *http.Request) {

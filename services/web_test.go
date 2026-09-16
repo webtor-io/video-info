@@ -440,3 +440,160 @@ func TestSearchKeepsHashReasonWhenIMDBIsEmpty(t *testing.T) {
 		t.Fatalf("calls=%v", f.calls)
 	}
 }
+
+// fakeFetcher stands in for SubsPool: it records which leg's cache the body was
+// asked from, which is how the per-leg body cache is checked without redis.
+type fakeFetcher struct {
+	got   *osdb.Subtitle
+	cache *redis.Cache
+	body  []byte
+	err   error
+}
+
+func (f *fakeFetcher) Get(_ context.Context, sub *osdb.Subtitle, _ string, c *redis.Cache, _ bool, _ *log.Entry) ([]byte, error) {
+	f.got, f.cache = sub, c
+	return f.body, f.err
+}
+
+func numbered(id, lang string) osdb.Subtitle {
+	s := one(id)
+	s.Attributes.Language = lang
+	return s
+}
+
+func subtitleRequest(path string) *http.Request {
+	r := httptest.NewRequest("GET", path, nil)
+	r.Header.Set("X-Source-Url", "http://seeder/f.mkv?token=secret")
+	r.Header.Set("X-Info-Hash", "abc")
+	r.Header.Set("X-Path", "/f.mkv")
+	return r
+}
+
+// The listing the viewer clicked came from the imdb leg because the hash leg
+// was still cold. By the time the track is fetched the hash leg answers, and a
+// re-run search would return only its list — the clicked id must still resolve.
+func TestHandleSubtitleFindsIMDBTrackAfterHashLegAppears(t *testing.T) {
+	f := &fakeSearcher{hash: []osdb.Subtitle{hashOne("11")}, imdb: []osdb.Subtitle{numbered("22", "fr")}}
+	fetch := &fakeFetcher{body: []byte("WEBVTT\n")}
+	w := &Web{searcher: f, subsPool: fetch, cachePool: redis.NewCachePool(nil)}
+
+	rr := httptest.NewRecorder()
+	w.handleSubtitle(rr, subtitleRequest("/opensubtitles/22.vtt?imdb-id=tt1"))
+
+	if rr.Code != http.StatusOK || rr.Body.String() != "WEBVTT\n" {
+		t.Fatalf("status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	if fetch.got == nil || fetch.got.Id != "22" {
+		t.Fatalf("fetched %+v", fetch.got)
+	}
+	if !callsEqual(f.calls, []string{"hash", "imdb"}) {
+		t.Fatalf("both legs must be asked before giving up: %v", f.calls)
+	}
+	// the body of an imdb-leg track lives under the imdb leg's cache key
+	if want := imdbCacheKey("abc", "/f.mkv", SearchQuery{ImdbID: "tt1"}); fetch.cache.Key() != want {
+		t.Fatalf("cache=%q want %q", fetch.cache.Key(), want)
+	}
+}
+
+func TestHandleSubtitleFindsHashTrack(t *testing.T) {
+	f := &fakeSearcher{hash: []osdb.Subtitle{hashOne("11")}, imdb: []osdb.Subtitle{numbered("22", "fr")}}
+	fetch := &fakeFetcher{body: []byte("WEBVTT\n")}
+	w := &Web{searcher: f, subsPool: fetch, cachePool: redis.NewCachePool(nil)}
+
+	rr := httptest.NewRecorder()
+	w.handleSubtitle(rr, subtitleRequest("/opensubtitles/11.vtt?imdb-id=tt1"))
+
+	if rr.Code != http.StatusOK || fetch.got == nil || fetch.got.Id != "11" {
+		t.Fatalf("status=%d fetched=%+v", rr.Code, fetch.got)
+	}
+	if !callsEqual(f.calls, []string{"hash"}) {
+		t.Fatalf("the imdb leg must not be asked once the id resolved: %v", f.calls)
+	}
+	if want := hashCacheKey("abc", "/f.mkv"); fetch.cache.Key() != want {
+		t.Fatalf("cache=%q want %q", fetch.cache.Key(), want)
+	}
+}
+
+// A track the hash leg listed still resolves when the hash leg has meanwhile
+// gone cold and only the imdb leg answers — the mirror image of the first case.
+func TestHandleSubtitleFindsHashTrackThroughIMDBLegAfterHashFails(t *testing.T) {
+	f := &fakeSearcher{hashErr: errors.New("boom"), imdb: []osdb.Subtitle{numbered("11", "en")}}
+	fetch := &fakeFetcher{body: []byte("WEBVTT\n")}
+	w := &Web{searcher: f, subsPool: fetch, cachePool: redis.NewCachePool(nil)}
+
+	rr := httptest.NewRecorder()
+	w.handleSubtitle(rr, subtitleRequest("/opensubtitles/11.vtt?imdb-id=tt1"))
+
+	if rr.Code != http.StatusOK || fetch.got == nil || fetch.got.Id != "11" {
+		t.Fatalf("status=%d fetched=%+v", rr.Code, fetch.got)
+	}
+}
+
+func TestHandleSubtitleUnknownIDIs404(t *testing.T) {
+	f := &fakeSearcher{hash: []osdb.Subtitle{hashOne("11")}, imdb: []osdb.Subtitle{numbered("22", "fr")}}
+	fetch := &fakeFetcher{body: []byte("WEBVTT\n")}
+	w := &Web{searcher: f, subsPool: fetch, cachePool: redis.NewCachePool(nil)}
+
+	rr := httptest.NewRecorder()
+	w.handleSubtitle(rr, subtitleRequest("/opensubtitles/99.vtt?imdb-id=tt1"))
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status=%d want 404", rr.Code)
+	}
+	if fetch.got != nil {
+		t.Fatalf("nothing must be fetched: %+v", fetch.got)
+	}
+	if !callsEqual(f.calls, []string{"hash", "imdb"}) {
+		t.Fatalf("calls=%v", f.calls)
+	}
+}
+
+// The lookup is over the candidates, not the listing: a track beyond the
+// per-language cap of three is not shown, but its id is still valid — a viewer
+// can hold it from a listing made when the ranking put it higher.
+func TestHandleSubtitleResolvesBeyondPerLangCap(t *testing.T) {
+	var hash []osdb.Subtitle
+	for _, id := range []string{"11", "12", "13", "14"} {
+		hash = append(hash, hashOne(id))
+	}
+	f := &fakeSearcher{hash: hash}
+	fetch := &fakeFetcher{body: []byte("WEBVTT\n")}
+	w := &Web{searcher: f, subsPool: fetch, cachePool: redis.NewCachePool(nil)}
+
+	rr := httptest.NewRecorder()
+	w.handleSubtitle(rr, subtitleRequest("/opensubtitles/14.vtt"))
+
+	if rr.Code != http.StatusOK || fetch.got == nil || fetch.got.Id != "14" {
+		t.Fatalf("status=%d fetched=%+v", rr.Code, fetch.got)
+	}
+}
+
+// A track the ranking drops as useless for full dialogue never reaches a
+// listing, so its id must not resolve either.
+func TestHandleSubtitleDoesNotResolveFilteredTrack(t *testing.T) {
+	ai := hashOne("11")
+	ai.Attributes.AiTranslated = true
+	f := &fakeSearcher{hash: []osdb.Subtitle{ai}}
+	fetch := &fakeFetcher{body: []byte("WEBVTT\n")}
+	w := &Web{searcher: f, subsPool: fetch, cachePool: redis.NewCachePool(nil)}
+
+	rr := httptest.NewRecorder()
+	w.handleSubtitle(rr, subtitleRequest("/opensubtitles/11.vtt"))
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status=%d want 404", rr.Code)
+	}
+}
+
+func TestHandleSubtitleWithoutFileOrTitleIs404(t *testing.T) {
+	f := &fakeSearcher{}
+	w := &Web{searcher: f, subsPool: &fakeFetcher{}, cachePool: redis.NewCachePool(nil)}
+	rr := httptest.NewRecorder()
+	w.handleSubtitle(rr, httptest.NewRequest("GET", "/opensubtitles/11.vtt", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status=%d want 404", rr.Code)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("no leg must run: %v", f.calls)
+	}
+}
