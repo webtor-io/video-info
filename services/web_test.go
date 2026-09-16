@@ -542,6 +542,10 @@ func TestHandleSubtitleUnknownIDIs404(t *testing.T) {
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status=%d want 404", rr.Code)
 	}
+	// Both legs answered, so this is final: no Retry-After, no 503.
+	if got := rr.Header().Get("Retry-After"); got != "" {
+		t.Fatalf("Retry-After=%q want none", got)
+	}
 	if fetch.got != nil {
 		t.Fatalf("nothing must be fetched: %+v", fetch.got)
 	}
@@ -644,5 +648,64 @@ func TestSubtitlesJSONCarriesMoviehashMatchFromIMDBLeg(t *testing.T) {
 	}
 	if v, ok := items[0]["moviehash_match"]; !ok || v != false {
 		t.Fatalf("moviehash_match must be present and false: %v", items[0])
+	}
+}
+
+// The .vtt path makes the same distinction the listing makes: a leg that failed
+// means the track may exist and could not be read yet. On a cold torrent both
+// legs can be unavailable at once — the hash entry expired, the seeder is cold,
+// and the request carries no imdb-id — and 404 would tell the browser and the
+// CDN that the track is gone for good.
+func TestHandleSubtitleLegFailureIs503(t *testing.T) {
+	f := &fakeSearcher{hashErr: pkgerrors.Wrap(timeoutError{}, "failed to read head block")}
+	fetch := &fakeFetcher{body: []byte("WEBVTT\n")}
+	w := &Web{searcher: f, subsPool: fetch, cachePool: redis.NewCachePool(nil)}
+
+	srv := httptest.NewServer(http.HandlerFunc(w.handleSubtitle))
+	t.Cleanup(srv.Close)
+	req, err := http.NewRequest("GET", srv.URL+"/opensubtitles/11.vtt", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Source-Url", "http://seeder/f.mkv?token=secret")
+	req.Header.Set("X-Info-Hash", "abc")
+	req.Header.Set("X-Path", "/f.mkv")
+	res, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d want 503", res.StatusCode)
+	}
+	if got := res.Header.Get("Retry-After"); got != "5" {
+		t.Fatalf("Retry-After=%q want 5", got)
+	}
+	// the player reads this response, and the proxy does not add to
+	// Expose-Headers on its own
+	if got := res.Header.Get("Access-Control-Expose-Headers"); !strings.Contains(got, "Retry-After") {
+		t.Fatalf("Access-Control-Expose-Headers=%q", got)
+	}
+	if fetch.got != nil {
+		t.Fatalf("nothing must be fetched: %+v", fetch.got)
+	}
+}
+
+// A leg that failed while the *other* leg resolved the id is not a failure at
+// all: the track is served, no 503.
+func TestHandleSubtitleLegFailureWithAResultIs200(t *testing.T) {
+	f := &fakeSearcher{hashErr: errors.New("boom"), imdb: []osdb.Subtitle{numbered("11", "en")}}
+	fetch := &fakeFetcher{body: []byte("WEBVTT\n")}
+	w := &Web{searcher: f, subsPool: fetch, cachePool: redis.NewCachePool(nil)}
+
+	rr := httptest.NewRecorder()
+	w.handleSubtitle(rr, subtitleRequest("/opensubtitles/11.vtt?imdb-id=tt1"))
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d want 200", rr.Code)
+	}
+	if got := rr.Header().Get("Retry-After"); got != "" {
+		t.Fatalf("Retry-After=%q want none", got)
 	}
 }

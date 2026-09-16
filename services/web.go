@@ -358,8 +358,20 @@ func (s *Web) handleSubtitle(w http.ResponseWriter, r *http.Request) {
 	hashCache, imdbCache := s.caches(r, q)
 	sub, cache, reason := s.findTrack(r.Context(), strconv.Itoa(id), sourceURL, q, purge, hashCache, imdbCache, logger)
 	if sub == nil {
-		logger.WithField("reason", reason).Error("failed to find subtitle by id")
-		w.WriteHeader(404)
+		if reason != "" {
+			// A leg failed, so the track may well exist and simply could not be
+			// read yet — the same distinction /subtitles.json makes. 404 is
+			// final to the browser and to the CDN; 503 is not. The header is
+			// exposed because the reader here is the player, not web-ui, and
+			// the proxy does not add to Expose-Headers on its own.
+			logger.WithField("reason", reason).Warn("subtitle not ready")
+			w.Header().Set("Retry-After", retryAfterSeconds)
+			w.Header().Set("Access-Control-Expose-Headers", "Retry-After")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		logger.Error("failed to find subtitle by id")
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 	logger.Info("fetching subtitle")

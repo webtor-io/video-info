@@ -74,5 +74,17 @@ empty answers can be split by cause.
 
 ## `GET /opensubtitles/<id>.<format>`
 
-Returns the body of one track, converted to WebVTT. `404` when the id belongs to
-no track of this file.
+Returns the body of one track, converted to WebVTT.
+
+| Status | Meaning |
+|---|---|
+| `200` | the track body |
+| `400` | the path or the id does not parse |
+| `404` | the id belongs to no track of this file, or the request named neither a file nor a title |
+| `503` with `Retry-After: 5` | **not ready** — a search leg failed, so the track may exist and could not be read yet. Ask again |
+
+The same distinction as on the listing, for the same reason: on a cold torrent
+both legs can be unavailable at once (the 24h hash entry expired, the seeder is
+cold, and the request carries no `imdb-id`), and the track does exist. The
+`Retry-After` header is named in `Access-Control-Expose-Headers`, because the
+reader of this response is the player in the browser.
