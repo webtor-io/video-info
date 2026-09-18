@@ -13,10 +13,27 @@ import (
 // keeps every surviving track. Languages keep their first-seen order so
 // the caller's listing stays stable.
 func RankSubtitles(subs []osdb.Subtitle, perLang int) []osdb.Subtitle {
+	ranked, _ := RankSubtitlesDropped(subs, perLang)
+	return ranked
+}
+
+// RankSubtitlesDropped is RankSubtitles that also names the languages the
+// filter removed ENTIRELY — every candidate was machine/AI translated or
+// forced-only, so the viewer loses the language rather than a bad track.
+// It exists to be counted: whether "MT-only languages lose their only
+// track" is worth a policy is an open question, and the answer is a Loki
+// query over these, not an opinion.
+func RankSubtitlesDropped(subs []osdb.Subtitle, perLang int) ([]osdb.Subtitle, []string) {
 	byLang := map[string][]osdb.Subtitle{}
+	seen := map[string]bool{}
+	var seenOrder []string
 	var order []string
 	for _, s := range subs {
 		a := s.Attributes
+		if !seen[a.Language] {
+			seen[a.Language] = true
+			seenOrder = append(seenOrder, a.Language)
+		}
 		if a.ForeignPartsOnly || a.AiTranslated || a.MachineTranslated {
 			continue
 		}
@@ -24,6 +41,12 @@ func RankSubtitles(subs []osdb.Subtitle, perLang int) []osdb.Subtitle {
 			order = append(order, a.Language)
 		}
 		byLang[a.Language] = append(byLang[a.Language], s)
+	}
+	var dropped []string
+	for _, lang := range seenOrder {
+		if _, kept := byLang[lang]; !kept {
+			dropped = append(dropped, lang)
+		}
 	}
 	var res []osdb.Subtitle
 	for _, lang := range order {
@@ -43,5 +66,5 @@ func RankSubtitles(subs []osdb.Subtitle, perLang int) []osdb.Subtitle {
 		}
 		res = append(res, group...)
 	}
-	return res
+	return res, dropped
 }

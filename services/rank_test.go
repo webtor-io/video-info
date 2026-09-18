@@ -106,3 +106,25 @@ func TestRankSubtitlesPerLangCases(t *testing.T) {
 		})
 	}
 }
+
+// TestRankSubtitlesDroppedNamesLostLanguages: the languages the filter
+// removes entirely are the measurement behind the "MT-only languages lose
+// their only track" question — a language with one surviving human track
+// is not lost, one with only machine translations is.
+func TestRankSubtitlesDroppedNamesLostLanguages(t *testing.T) {
+	subs := []osdb.Subtitle{
+		sub("p1", "pt", 5, false, false, false, false),
+		sub("t1", "th", 5, false, false, false, true),
+		sub("t2", "th", 3, false, false, false, true),
+		sub("v1", "vi", 5, false, false, true, false),
+		sub("d1", "de", 5, false, false, false, true),
+		sub("d2", "de", 4, false, false, false, false),
+	}
+	ranked, dropped := RankSubtitlesDropped(subs, 3)
+	if len(ranked) != 2 {
+		t.Fatalf("kept: %d", len(ranked))
+	}
+	if len(dropped) != 2 || dropped[0] != "th" || dropped[1] != "vi" {
+		t.Fatalf("dropped languages: %v (de keeps a human track and must not be here)", dropped)
+	}
+}

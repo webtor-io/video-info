@@ -12,6 +12,18 @@ import (
 	"github.com/pkg/errors"
 )
 
+// ctxTransport reattaches a caller's context to requests built without
+// one (seekinghttp's). Clone, not mutate: a RoundTripper must not modify
+// the request it was handed.
+type ctxTransport struct {
+	ctx  context.Context
+	base http.RoundTripper
+}
+
+func (t ctxTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.base.RoundTrip(req.Clone(t.ctx))
+}
+
 type Hash struct {
 	url    string
 	cache  hashCache
@@ -37,14 +49,14 @@ func (s *Hash) get(ctx context.Context, purge bool) (uint64, int64, error) {
 		}
 	}
 	r := sh.New(s.url)
-	//myTransport := &http.Transport{
-	//	Dial: (&net.Dialer{
-	//		Timeout: 5 * time.Minute,
-	//	}).Dial,
-	//}
+	// seekinghttp builds its http.Requests without a context, so the
+	// caller's cancellation never reached the seeder reads: a viewer who
+	// navigated away kept the read going for the full five-minute client
+	// timeout and was logged as hash_timeout instead of client_gone. The
+	// transport reattaches the context to every request the library makes.
 	r.Client = &http.Client{
-		Timeout: 5 * time.Minute,
-		//Transport: myTransport,
+		Timeout:   5 * time.Minute,
+		Transport: ctxTransport{ctx: ctx, base: http.DefaultTransport},
 	}
 	hash, size, err := makeHash(r)
 	if err != nil {
