@@ -55,16 +55,23 @@ func run(c *cli.Context) error {
 	// Setting subsPool
 	subsPool := s.NewSubsPool(client, s3st)
 
-	// Setting ProbeService
-	probe := cs.NewProbe(c)
-	defer probe.Close()
+	// Setting ProbeService. NewProbe returns a typed nil when USE_PROBE is
+	// off; passed straight into NewServe that nil hides inside a non-nil
+	// Servable interface, slips past Serve's nil check and panics on the
+	// first call. Append only a real probe (how subtitle-translate wires it).
+	var servables []cs.Servable
+	if probe := cs.NewProbe(c); probe != nil {
+		defer probe.Close()
+		servables = append(servables, probe)
+	}
 
 	// Setting WebService
 	web := s.NewWeb(c, searchPool, imdbSearchPool, subsPool, cachePool)
 	defer web.Close()
+	servables = append(servables, web)
 
 	// Setting ServeService
-	serve := cs.NewServe(probe, web)
+	serve := cs.NewServe(servables...)
 
 	// And SERVE!
 	err := serve.Serve()
