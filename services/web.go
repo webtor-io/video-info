@@ -109,9 +109,10 @@ func NewWeb(c *cli.Context, sp *SearchPool, isp *IMDBSearchPool, sbp *SubsPool, 
 func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 	return append(f,
 		cli.StringFlag{
-			Name:  WebHostFlag,
-			Usage: "listening host",
-			Value: "",
+			Name:   WebHostFlag,
+			Usage:  "listening host",
+			Value:  "",
+			EnvVar: "WEB_HOST",
 		},
 		cli.StringFlag{
 			Name:   WebSourceURL,
@@ -120,9 +121,10 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 			EnvVar: "SOURCE_URL",
 		},
 		cli.IntFlag{
-			Name:  WebPortFlag,
-			Usage: "http listening port",
-			Value: 8080,
+			Name:   WebPortFlag,
+			Usage:  "http listening port",
+			Value:  8080,
+			EnvVar: "WEB_PORT",
 		},
 	)
 }
