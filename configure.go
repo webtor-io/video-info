@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	cs "github.com/webtor-io/common-services"
@@ -33,6 +34,11 @@ func run(c *cli.Context) error {
 
 	// Setting S3Storage
 	s3st := s3.NewS3Storage(c, s3cl)
+	// NewS3Client is nil without credentials; the storage would dereference
+	// it on the first subtitle it stores.
+	if s3st != nil && s3cl == nil {
+		return errors.New("USE_S3 is on but AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are empty")
+	}
 
 	// Setting redisClient
 	redisClient := cs.NewRedisClient(c)
@@ -65,7 +71,8 @@ func run(c *cli.Context) error {
 		servables = append(servables, probe)
 	}
 
-	// Setting WebService
+	// Setting WebService. The last defer, so it runs first: in-flight
+	// lookups drain while the probe is still up.
 	web := s.NewWeb(c, searchPool, imdbSearchPool, subsPool, cachePool)
 	defer web.Close()
 	servables = append(servables, web)

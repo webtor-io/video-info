@@ -16,6 +16,7 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	cs "github.com/webtor-io/common-services"
 	"github.com/webtor-io/video-info/services/osdb"
 
 	logrusmiddleware "github.com/bakins/logrus-middleware"
@@ -47,7 +48,7 @@ func (p poolSearcher) ByIMDB(ctx context.Context, q SearchQuery, c *redis.Cache,
 type Web struct {
 	host      string
 	port      int
-	ln        net.Listener
+	gs        *cs.GracefulServer
 	searcher  subtitleSearcher
 	subsPool  subtitleFetcher
 	cachePool *redis.CachePool
@@ -103,10 +104,12 @@ func NewWeb(c *cli.Context, sp *SearchPool, isp *IMDBSearchPool, sbp *SubsPool, 
 		searcher:  poolSearcher{hash: sp, imdb: isp},
 		subsPool:  sbp,
 		cachePool: cp,
+		gs:        cs.NewGracefulServer(cs.ShutdownTimeout(c)),
 	}
 }
 
 func RegisterWebFlags(f []cli.Flag) []cli.Flag {
+	f = cs.RegisterShutdownFlags(f)
 	return append(f,
 		cli.StringFlag{
 			Name:   WebHostFlag,
@@ -493,21 +496,24 @@ func (s *Web) Serve() error {
 	if err != nil {
 		return errors.Wrap(err, "Failed to web listen to tcp connection")
 	}
-	s.ln = ln
+	log.Infof("Serving Web at %v", addr)
+	return s.serve(ln)
+}
+
+func (s *Web) serve(ln net.Listener) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/opensubtitles/", s.handleSubtitle)
 	mux.HandleFunc("/subtitles.json", s.handleSubtitlesJSON)
-	log.Infof("Serving Web at %v", addr)
-
 	logger := log.New()
 	l := logrusmiddleware.Middleware{
 		Logger: logger,
 	}
-	return http.Serve(ln, l.Handler(mux, ""))
+	return s.gs.Serve(&http.Server{Handler: l.Handler(mux, "")}, ln)
 }
 
+// Close stops accepting and lets in-flight lookups finish, up to
+// WEB_SHUTDOWN_TIMEOUT. Closing only the listener let the process exit in the
+// middle of every response. run() defers it last, so it runs first.
 func (s *Web) Close() {
-	if s.ln != nil {
-		s.ln.Close()
-	}
+	s.gs.Close()
 }
